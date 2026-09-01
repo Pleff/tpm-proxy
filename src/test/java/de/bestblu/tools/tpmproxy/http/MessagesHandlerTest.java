@@ -173,7 +173,11 @@ class MessagesHandlerTest {
 
     @Test
     void returns429AndRetryAfterWhenTheTpmBudgetIsExhausted() throws Exception {
-        startProxy(configWithTokenAndTimeout(null, 200L), 1, 1000);
+        // A limit of 10 with 5 already committed leaves only 5 free - the real request's own
+        // ~55-token reservation still doesn't fit, but the window isn't empty (currentSum != 0),
+        // so the "oversized single request" exception from bdf276d does not kick in here.
+        startProxy(configWithTokenAndTimeout(null, 200L), 10, 1_000_000);
+        tpmLimiter.tryReserve(5);
         upstreamHandler.set(okJsonResponder(7, 3));
 
         HttpResponse<String> response = send("POST", validBody(), null);
@@ -186,7 +190,10 @@ class MessagesHandlerTest {
 
     @Test
     void returns429WhenTheDailyBudgetIsExhaustedAndReleasesTheTpmReservationAgain() throws Exception {
-        startProxy(configWithToken(null), 100_000, 1);
+        // Same reasoning as above for the daily counter: 5 tokens already committed today means
+        // currentUsage != 0, so the oversized-request exception does not admit this ~55-token request.
+        startProxy(configWithToken(null), 100_000, 10);
+        dailyLimiter.tryReserve(1).ifPresent(r -> dailyLimiter.correct(r, 5));
         upstreamHandler.set(okJsonResponder(7, 3));
 
         HttpResponse<String> response = send("POST", validBody(), null);
@@ -196,6 +203,20 @@ class MessagesHandlerTest {
         assertEquals(0, upstreamRequestCount.get());
         assertEquals(0, tpmLimiter.snapshot().windowUsage(),
                 "the TPM reservation made before the daily check failed must be released again");
+    }
+
+    @Test
+    void admitsASingleOversizedRequestWhenTheWindowIsCompletelyEmpty() throws Exception {
+        // Regression test for bdf276d: a request whose own reservation (input estimate + max_tokens)
+        // exceeds the TPM limit could never be admitted before - not now, not ever, since a single
+        // API call can't be split across windows. It must be let through once nothing else is in flight.
+        startProxy(configWithToken(null), 10, 1_000_000); // limit of 10, request needs ~55 tokens
+        upstreamHandler.set(okJsonResponder(7, 3));
+
+        HttpResponse<String> response = send("POST", validBody(), null);
+
+        assertEquals(200, response.statusCode());
+        assertEquals(1, upstreamRequestCount.get());
     }
 
     @Test
