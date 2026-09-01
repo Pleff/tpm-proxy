@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sun.net.httpserver.HttpServer;
 import dev.tpmproxy.config.ConfigException;
 import dev.tpmproxy.config.ProxyConfig;
+import dev.tpmproxy.http.DashboardHandler;
 import dev.tpmproxy.http.LimitHandler;
 import dev.tpmproxy.http.MessagesHandler;
 import dev.tpmproxy.http.StatusHandler;
@@ -45,11 +46,13 @@ public final class Main {
             server.createContext("/internal/status", new StatusHandler(config, limiter, stats, JSON));
             server.createContext("/internal/limit", new LimitHandler(limiter, JSON));
             server.createContext("/v1/messages", new MessagesHandler(config, limiter, langdock, estimator, JSON, stats));
+            server.createContext("/", new DashboardHandler());
 
             server.start();
             System.out.printf(
                     "tpm-proxy listening on port %d, forwarding to %s (initial TPM limit: %d)%n",
                     config.proxyPort(), config.langdockBaseUrl(), config.initialTpmLimit());
+            System.out.printf("tpm-proxy dashboard: http://localhost:%d/%n", config.proxyPort());
         } catch (IOException e) {
             System.err.println("tpm-proxy: failed to start HTTP server - " + e.getMessage());
             System.exit(1);

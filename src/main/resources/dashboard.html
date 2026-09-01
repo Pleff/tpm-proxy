@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>tpm-proxy</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { font-family: system-ui, sans-serif; max-width: 640px; margin: 2rem auto; padding: 0 1rem; }
+  h1 { font-size: 1.4rem; margin-bottom: .25rem; }
+  h2 { font-size: 1rem; margin: 0 0 .75rem; opacity: .85; }
+  .card { border: 1px solid #8884; border-radius: 8px; padding: 1rem; margin-bottom: 1rem; }
+  .stat { display: flex; justify-content: space-between; padding: .25rem 0; }
+  .stat span:first-child { opacity: .7; }
+  .bar-track { background: #8882; border-radius: 4px; height: 10px; overflow: hidden; margin-top: .75rem; }
+  .bar-fill { background: #2a7; height: 100%; width: 0; transition: width .3s; }
+  .bar-fill.warn { background: #d90; }
+  .bar-fill.danger { background: #d33; }
+  form { display: flex; gap: .5rem; align-items: center; }
+  input[type=number] { width: 8rem; padding: .4rem; }
+  button { padding: .4rem .8rem; cursor: pointer; }
+  #limitMsg { font-size: .85rem; opacity: .8; min-height: 1.2em; margin-top: .5rem; }
+  code { background: #8882; padding: .1rem .3rem; border-radius: 4px; }
+  footer { font-size: .8rem; opacity: .6; }
+</style>
+</head>
+<body>
+  <h1>tpm-proxy</h1>
+  <p style="opacity:.7">Lokaler TPM-Rate-Limiting-Proxy vor Langdock</p>
+
+  <div class="card">
+    <h2>Aktuelles Budget</h2>
+    <div class="stat"><span>TPM-Limit</span><span id="tpmLimit">-</span></div>
+    <div class="stat"><span>Auslastung (60s-Fenster = aktuelle Rate)</span><span id="windowUsage">-</span></div>
+    <div class="stat"><span>Verbleibend</span><span id="remaining">-</span></div>
+    <div class="stat"><span>Aktive Reservierungen</span><span id="activeReservations">-</span></div>
+    <div class="bar-track"><div class="bar-fill" id="bar"></div></div>
+  </div>
+
+  <div class="card">
+    <h2>Limit ändern</h2>
+    <form id="limitForm">
+      <input type="number" id="newLimit" min="1" step="1" placeholder="neues TPM-Limit" required>
+      <button type="submit">Setzen</button>
+    </form>
+    <div id="limitMsg"></div>
+  </div>
+
+  <div class="card">
+    <h2>Lifetime (seit Prozessstart)</h2>
+    <div class="stat"><span>Tokens gesamt</span><span id="totalTokens">-</span></div>
+    <div class="stat"><span>Requests gesamt</span><span id="totalRequests">-</span></div>
+  </div>
+
+  <div class="card">
+    <h2>Letzter Request</h2>
+    <div class="stat"><span>Modell</span><span id="lastModel">-</span></div>
+    <div class="stat"><span>Streaming</span><span id="lastStreaming">-</span></div>
+    <div class="stat"><span>Tokens (in/out)</span><span id="lastTokens">-</span></div>
+    <div class="stat"><span>Dauer</span><span id="lastDuration">-</span></div>
+  </div>
+
+  <footer>Langdock-Endpunkt: <code id="baseUrl">-</code> · aktualisiert alle 2s</footer>
+
+<script>
+async function refresh() {
+  try {
+    const res = await fetch('/internal/status');
+    if (!res.ok) throw new Error('status ' + res.status);
+    const s = await res.json();
+
+    document.getElementById('tpmLimit').textContent = s.tpmLimit;
+    document.getElementById('windowUsage').textContent = s.windowUsage;
+    document.getElementById('remaining').textContent = s.remaining;
+    document.getElementById('activeReservations').textContent = s.activeReservations;
+    document.getElementById('totalTokens').textContent = s.totalTokens;
+    document.getElementById('totalRequests').textContent = s.totalRequests;
+    document.getElementById('baseUrl').textContent = s.langdockBaseUrl;
+
+    const pct = s.tpmLimit > 0 ? Math.min(100, (s.windowUsage / s.tpmLimit) * 100) : 0;
+    const bar = document.getElementById('bar');
+    bar.style.width = pct + '%';
+    bar.className = 'bar-fill' + (pct > 90 ? ' danger' : pct > 70 ? ' warn' : '');
+
+    const last = s.lastRequest;
+    document.getElementById('lastModel').textContent = last ? last.model : '-';
+    document.getElementById('lastStreaming').textContent = last ? (last.streaming ? 'ja' : 'nein') : '-';
+    document.getElementById('lastTokens').textContent = last
+      ? `${last.totalTokens} (in=${last.inputTokens} out=${last.outputTokens})`
+      : '-';
+    document.getElementById('lastDuration').textContent = last ? `${last.durationMillis} ms` : '-';
+
+    const limitInput = document.getElementById('newLimit');
+    if (document.activeElement !== limitInput) {
+      limitInput.placeholder = 'aktuell: ' + s.tpmLimit;
+    }
+  } catch (e) {
+    document.getElementById('limitMsg').textContent = 'Verbindung zum Proxy verloren...';
+  }
+}
+
+document.getElementById('limitForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const input = document.getElementById('newLimit');
+  const value = parseInt(input.value, 10);
+  const msg = document.getElementById('limitMsg');
+
+  if (!value || value <= 0) {
+    msg.textContent = 'Bitte eine positive Zahl eingeben.';
+    return;
+  }
+
+  try {
+    const res = await fetch('/internal/limit', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tpmLimit: value })
+    });
+    if (res.ok) {
+      msg.textContent = `Limit auf ${value} gesetzt.`;
+      input.value = '';
+      refresh();
+    } else {
+      const err = await res.json();
+      msg.textContent = 'Fehler: ' + (err.error && err.error.message ? err.error.message : res.status);
+    }
+  } catch (err) {
+    msg.textContent = 'Request fehlgeschlagen: ' + err.message;
+  }
+});
+
+refresh();
+setInterval(refresh, 2000);
+</script>
+</body>
+</html>
