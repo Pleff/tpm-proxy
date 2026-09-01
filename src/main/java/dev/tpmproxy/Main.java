@@ -4,8 +4,12 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sun.net.httpserver.HttpServer;
 import dev.tpmproxy.config.ConfigException;
 import dev.tpmproxy.config.ProxyConfig;
-import dev.tpmproxy.http.NotImplementedHandler;
+import dev.tpmproxy.http.LimitHandler;
+import dev.tpmproxy.http.MessagesHandler;
 import dev.tpmproxy.http.StatusHandler;
+import dev.tpmproxy.limiter.SlidingWindowLimiter;
+import dev.tpmproxy.upstream.LangdockClient;
+import dev.tpmproxy.upstream.TokenEstimator;
 
 import java.io.IOException;
 import java.net.InetAddress;
@@ -26,14 +30,19 @@ public final class Main {
             return;
         }
 
+        SlidingWindowLimiter limiter = new SlidingWindowLimiter(config.initialTpmLimit());
+        LangdockClient langdock = new LangdockClient(config.langdockBaseUrl(), config.langdockApiKey(), JSON);
+        TokenEstimator estimator = new TokenEstimator(langdock);
+
         try {
             // SPEC.md Section 8: bind to loopback only, not exposed on the network.
             HttpServer server = HttpServer.create(
                     new InetSocketAddress(InetAddress.getLoopbackAddress(), config.proxyPort()), 0);
             server.setExecutor(Executors.newVirtualThreadPerTaskExecutor());
 
-            server.createContext("/internal/status", new StatusHandler(config));
-            server.createContext("/v1/messages", new NotImplementedHandler());
+            server.createContext("/internal/status", new StatusHandler(config, limiter, JSON));
+            server.createContext("/internal/limit", new LimitHandler(limiter, JSON));
+            server.createContext("/v1/messages", new MessagesHandler(config, limiter, langdock, estimator, JSON));
 
             server.start();
             System.out.printf(

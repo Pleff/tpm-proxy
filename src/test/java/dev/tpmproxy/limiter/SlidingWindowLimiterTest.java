@@ -1,0 +1,122 @@
+package dev.tpmproxy.limiter;
+
+import dev.tpmproxy.limiter.SlidingWindowLimiter.Reservation;
+import org.junit.jupiter.api.Test;
+
+import java.time.Clock;
+import java.time.Duration;
+import java.time.Instant;
+import java.time.ZoneId;
+import java.time.ZoneOffset;
+import java.util.Optional;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+class SlidingWindowLimiterTest {
+
+    @Test
+    void reservesWithinBudgetAndRejectsOverBudget() {
+        SlidingWindowLimiter limiter = new SlidingWindowLimiter(1000, new MutableClock());
+
+        assertTrue(limiter.tryReserve(600).isPresent());
+        assertTrue(limiter.tryReserve(400).isPresent());
+        assertFalse(limiter.tryReserve(1).isPresent(), "budget is fully spent, next reservation must be rejected");
+    }
+
+    @Test
+    void correctFreesUpBudgetWhenActualUsageIsLower() {
+        SlidingWindowLimiter limiter = new SlidingWindowLimiter(1000, new MutableClock());
+
+        Reservation reservation = limiter.tryReserve(800).orElseThrow();
+        assertFalse(limiter.tryReserve(500).isPresent());
+
+        limiter.correct(reservation, 300); // actual usage was lower than the max_tokens-based reservation
+
+        assertTrue(limiter.tryReserve(500).isPresent());
+        assertEquals(800, limiter.snapshot().windowUsage());
+        assertEquals(200, limiter.snapshot().remaining());
+    }
+
+    @Test
+    void releaseDropsTheReservationEntirely() {
+        SlidingWindowLimiter limiter = new SlidingWindowLimiter(1000, new MutableClock());
+
+        Reservation reservation = limiter.tryReserve(1000).orElseThrow();
+        assertFalse(limiter.tryReserve(1).isPresent());
+
+        limiter.release(reservation);
+
+        assertEquals(0, limiter.snapshot().windowUsage());
+        assertTrue(limiter.tryReserve(1000).isPresent());
+    }
+
+    @Test
+    void expiredEntriesFreeUpBudgetAfterTheWindowElapses() {
+        MutableClock clock = new MutableClock();
+        SlidingWindowLimiter limiter = new SlidingWindowLimiter(1000, clock);
+
+        limiter.tryReserve(1000).orElseThrow();
+        assertFalse(limiter.tryReserve(1).isPresent());
+
+        clock.advance(Duration.ofSeconds(61));
+
+        assertTrue(limiter.tryReserve(1000).isPresent(), "reservation should have aged out of the 60s window");
+    }
+
+    @Test
+    void tpmLimitIsAdjustableAtRuntime() {
+        SlidingWindowLimiter limiter = new SlidingWindowLimiter(100, new MutableClock());
+
+        assertFalse(limiter.tryReserve(200).isPresent());
+
+        limiter.setTpmLimit(500);
+
+        assertTrue(limiter.tryReserve(200).isPresent());
+        assertEquals(500, limiter.snapshot().tpmLimit());
+    }
+
+    @Test
+    void millisUntilAvailableIsZeroWhenBudgetIsFree() {
+        SlidingWindowLimiter limiter = new SlidingWindowLimiter(1000, new MutableClock());
+
+        assertEquals(0, limiter.millisUntilAvailable(500));
+    }
+
+    @Test
+    void millisUntilAvailableEstimatesWhenTheOldestReservationExpires() {
+        MutableClock clock = new MutableClock();
+        SlidingWindowLimiter limiter = new SlidingWindowLimiter(1000, clock);
+
+        limiter.tryReserve(1000).orElseThrow();
+
+        long wait = limiter.millisUntilAvailable(500);
+
+        assertTrue(wait > 0 && wait <= 60_000, "expected a wait roughly bounded by the 60s window, got " + wait);
+    }
+
+    /** A {@link Clock} the test can advance manually to exercise window expiry. */
+    private static final class MutableClock extends Clock {
+        private Instant instant = Instant.parse("2026-01-01T00:00:00Z");
+
+        @Override
+        public ZoneId getZone() {
+            return ZoneOffset.UTC;
+        }
+
+        @Override
+        public Clock withZone(ZoneId zone) {
+            return this;
+        }
+
+        @Override
+        public Instant instant() {
+            return instant;
+        }
+
+        void advance(Duration duration) {
+            instant = instant.plus(duration);
+        }
+    }
+}

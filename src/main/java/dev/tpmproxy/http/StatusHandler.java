@@ -1,26 +1,26 @@
 package dev.tpmproxy.http;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;
-import dev.tpmproxy.Main;
 import dev.tpmproxy.config.ProxyConfig;
+import dev.tpmproxy.limiter.SlidingWindowLimiter;
 
 import java.io.IOException;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
-/**
- * GET /internal/status - minimal health/status placeholder.
- * TODO(SPEC.md Section 7): replace tpmLimit/window usage with live values once
- * the sliding-window limiter (Section 5.2) and PUT /internal/limit (Section 5.4)
- * are implemented.
- */
+/** GET /internal/status - live TPM budget snapshot (SPEC.md Section 7). */
 public class StatusHandler implements HttpHandler {
 
     private final ProxyConfig config;
+    private final SlidingWindowLimiter limiter;
+    private final ObjectMapper json;
 
-    public StatusHandler(ProxyConfig config) {
+    public StatusHandler(ProxyConfig config, SlidingWindowLimiter limiter, ObjectMapper json) {
         this.config = config;
+        this.limiter = limiter;
+        this.json = json;
     }
 
     @Override
@@ -31,16 +31,16 @@ public class StatusHandler implements HttpHandler {
             return;
         }
 
+        SlidingWindowLimiter.Snapshot snapshot = limiter.snapshot();
+
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("status", "ok");
-        body.put("tpmLimit", config.initialTpmLimit());
+        body.put("tpmLimit", snapshot.tpmLimit());
+        body.put("windowUsage", snapshot.windowUsage());
+        body.put("remaining", snapshot.remaining());
+        body.put("activeReservations", snapshot.activeReservations());
         body.put("langdockBaseUrl", config.langdockBaseUrl());
 
-        byte[] payload = Main.JSON.writeValueAsBytes(body);
-        exchange.getResponseHeaders().set("Content-Type", "application/json");
-        exchange.sendResponseHeaders(200, payload.length);
-        try (var os = exchange.getResponseBody()) {
-            os.write(payload);
-        }
+        JsonHttp.writeJson(exchange, json, 200, body);
     }
 }
