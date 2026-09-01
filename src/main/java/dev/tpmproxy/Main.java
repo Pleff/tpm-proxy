@@ -8,6 +8,7 @@ import dev.tpmproxy.http.LimitHandler;
 import dev.tpmproxy.http.MessagesHandler;
 import dev.tpmproxy.http.StatusHandler;
 import dev.tpmproxy.limiter.SlidingWindowLimiter;
+import dev.tpmproxy.stats.ProxyStats;
 import dev.tpmproxy.upstream.LangdockClient;
 import dev.tpmproxy.upstream.TokenEstimator;
 
@@ -33,6 +34,7 @@ public final class Main {
         SlidingWindowLimiter limiter = new SlidingWindowLimiter(config.initialTpmLimit());
         LangdockClient langdock = new LangdockClient(config.langdockBaseUrl(), config.langdockApiKey());
         TokenEstimator estimator = new TokenEstimator();
+        ProxyStats stats = new ProxyStats();
 
         try {
             // SPEC.md Section 8: bind to loopback only, not exposed on the network.
@@ -40,9 +42,9 @@ public final class Main {
                     new InetSocketAddress(InetAddress.getLoopbackAddress(), config.proxyPort()), 0);
             server.setExecutor(Executors.newVirtualThreadPerTaskExecutor());
 
-            server.createContext("/internal/status", new StatusHandler(config, limiter, JSON));
+            server.createContext("/internal/status", new StatusHandler(config, limiter, stats, JSON));
             server.createContext("/internal/limit", new LimitHandler(limiter, JSON));
-            server.createContext("/v1/messages", new MessagesHandler(config, limiter, langdock, estimator, JSON));
+            server.createContext("/v1/messages", new MessagesHandler(config, limiter, langdock, estimator, JSON, stats));
 
             server.start();
             System.out.printf(

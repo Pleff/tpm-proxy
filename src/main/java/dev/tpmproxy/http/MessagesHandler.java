@@ -7,6 +7,7 @@ import com.sun.net.httpserver.HttpHandler;
 import dev.tpmproxy.config.ProxyConfig;
 import dev.tpmproxy.limiter.SlidingWindowLimiter;
 import dev.tpmproxy.limiter.SlidingWindowLimiter.Reservation;
+import dev.tpmproxy.stats.ProxyStats;
 import dev.tpmproxy.upstream.LangdockClient;
 import dev.tpmproxy.upstream.TokenEstimator;
 
@@ -37,18 +38,22 @@ public class MessagesHandler implements HttpHandler {
     private final LangdockClient langdock;
     private final TokenEstimator estimator;
     private final ObjectMapper json;
+    private final ProxyStats stats;
 
     public MessagesHandler(ProxyConfig config, SlidingWindowLimiter limiter, LangdockClient langdock,
-                            TokenEstimator estimator, ObjectMapper json) {
+                            TokenEstimator estimator, ObjectMapper json, ProxyStats stats) {
         this.config = config;
         this.limiter = limiter;
         this.langdock = langdock;
         this.estimator = estimator;
         this.json = json;
+        this.stats = stats;
     }
 
     @Override
     public void handle(HttpExchange exchange) throws IOException {
+        long startNanos = System.nanoTime();
+
         if (!"POST".equalsIgnoreCase(exchange.getRequestMethod())) {
             JsonHttp.writeAnthropicError(exchange, json, 405, "invalid_request_error", "method not allowed");
             return;
@@ -72,6 +77,7 @@ public class MessagesHandler implements HttpHandler {
             return;
         }
 
+        String model = requestJson.path("model").asText("unknown");
         int maxTokens = requestJson.path("max_tokens").asInt(0);
         if (maxTokens <= 0) {
             JsonHttp.writeAnthropicError(exchange, json, 400, "invalid_request_error", "max_tokens is required");
@@ -86,7 +92,9 @@ public class MessagesHandler implements HttpHandler {
         try {
             Optional<Reservation> reserved = limiter.reserveBlocking(reservationTokens, config.queueTimeoutMs());
             if (reserved.isEmpty()) {
-                sendRateLimitError(exchange, limiter.millisUntilAvailable(reservationTokens));
+                long retryAfterMillis = limiter.millisUntilAvailable(reservationTokens);
+                sendRateLimitError(exchange, retryAfterMillis);
+                logRejected(model, streaming, retryAfterMillis, startNanos);
                 return;
             }
             reservation = reserved.get();
@@ -98,9 +106,9 @@ public class MessagesHandler implements HttpHandler {
 
         try {
             if (streaming) {
-                forwardStreaming(exchange, rawBody, reservation);
+                forwardStreaming(exchange, rawBody, reservation, model, startNanos);
             } else {
-                forwardNonStreaming(exchange, rawBody, reservation);
+                forwardNonStreaming(exchange, rawBody, reservation, model, startNanos);
             }
         } catch (IOException | InterruptedException e) {
             if (e instanceof InterruptedException) {
@@ -111,7 +119,7 @@ public class MessagesHandler implements HttpHandler {
         }
     }
 
-    private void forwardNonStreaming(HttpExchange exchange, byte[] rawBody, Reservation reservation)
+    private void forwardNonStreaming(HttpExchange exchange, byte[] rawBody, Reservation reservation, String model, long startNanos)
             throws IOException, InterruptedException {
         HttpResponse<byte[]> response = langdock.forwardMessages(rawBody, exchange.getRequestHeaders(),
                 HttpResponse.BodyHandlers.ofByteArray());
@@ -120,15 +128,20 @@ public class MessagesHandler implements HttpHandler {
         if (response.statusCode() == 200) {
             JsonNode responseJson = json.readTree(responseBody);
             JsonNode usage = responseJson.get("usage");
+            int inputTokens = 0;
+            int outputTokens = 0;
             if (usage != null) {
-                int actual = usage.path("input_tokens").asInt(0) + usage.path("output_tokens").asInt(0);
-                limiter.correct(reservation, actual);
+                inputTokens = usage.path("input_tokens").asInt(0);
+                outputTokens = usage.path("output_tokens").asInt(0);
+                limiter.correct(reservation, inputTokens + outputTokens);
             } else {
                 limiter.release(reservation);
             }
+            logCompleted(model, false, inputTokens, outputTokens, startNanos);
         } else {
             // Real error from Langdock (SPEC.md Section 5.3) - passed through unchanged; no tokens were spent.
             limiter.release(reservation);
+            logFailed(model, false, response.statusCode(), startNanos);
         }
 
         copyResponseHeaders(response, exchange);
@@ -138,13 +151,14 @@ public class MessagesHandler implements HttpHandler {
         }
     }
 
-    private void forwardStreaming(HttpExchange exchange, byte[] rawBody, Reservation reservation)
+    private void forwardStreaming(HttpExchange exchange, byte[] rawBody, Reservation reservation, String model, long startNanos)
             throws IOException, InterruptedException {
         HttpResponse<InputStream> response = langdock.forwardMessages(rawBody, exchange.getRequestHeaders(),
                 HttpResponse.BodyHandlers.ofInputStream());
 
         if (response.statusCode() != 200) {
             limiter.release(reservation);
+            logFailed(model, true, response.statusCode(), startNanos);
             byte[] errorBody = response.body().readAllBytes();
             copyResponseHeaders(response, exchange);
             exchange.sendResponseHeaders(response.statusCode(), errorBody.length);
@@ -181,6 +195,7 @@ public class MessagesHandler implements HttpHandler {
                 // reservation as-is rather than releasing it (SPEC.md Section 5.1: no negative rebooking).
                 limiter.correct(reservation, reservation.tokens());
             }
+            logCompleted(model, true, usage[0], usage[1], startNanos);
         }
     }
 
@@ -214,6 +229,31 @@ public class MessagesHandler implements HttpHandler {
         exchange.getResponseHeaders().set("retry-after", String.valueOf(retryAfterSeconds));
         JsonHttp.writeAnthropicError(exchange, json, 429, "rate_limit_error",
                 "tpm-proxy: local TPM budget exhausted, retry later");
+    }
+
+    private long millisSince(long startNanos) {
+        return (System.nanoTime() - startNanos) / 1_000_000;
+    }
+
+    /** Logs a completed request and records it in the lifetime stats (SPEC.md Section 7). */
+    private void logCompleted(String model, boolean streaming, int inputTokens, int outputTokens, long startNanos) {
+        long durationMillis = millisSince(startNanos);
+        stats.recordCompletedRequest(model, streaming, inputTokens, outputTokens, durationMillis);
+        SlidingWindowLimiter.Snapshot snapshot = limiter.snapshot();
+        System.out.printf(
+                "tpm-proxy: model=%s stream=%b tokens=%d (in=%d out=%d) duration=%dms | window=%d/%d tpm | lifetime=%d tokens / %d requests%n",
+                model, streaming, inputTokens + outputTokens, inputTokens, outputTokens, durationMillis,
+                snapshot.windowUsage(), snapshot.tpmLimit(), stats.totalTokens(), stats.totalRequests());
+    }
+
+    private void logFailed(String model, boolean streaming, int upstreamStatus, long startNanos) {
+        System.out.printf("tpm-proxy: model=%s stream=%b upstream_status=%d duration=%dms (no tokens charged)%n",
+                model, streaming, upstreamStatus, millisSince(startNanos));
+    }
+
+    private void logRejected(String model, boolean streaming, long retryAfterMillis, long startNanos) {
+        System.out.printf("tpm-proxy: model=%s stream=%b REJECTED (local TPM budget exhausted) retryAfter=%dms duration=%dms%n",
+                model, streaming, retryAfterMillis, millisSince(startNanos));
     }
 
     /**
