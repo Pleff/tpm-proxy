@@ -16,9 +16,12 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class SlidingWindowLimiterTest {
 
+    private static final long ONE_MINUTE_MILLIS = 60_000L;
+    private static final long ONE_DAY_MILLIS = 24 * 60 * 60 * 1000L;
+
     @Test
     void reservesWithinBudgetAndRejectsOverBudget() {
-        SlidingWindowLimiter limiter = new SlidingWindowLimiter(1000, new MutableClock());
+        SlidingWindowLimiter limiter = new SlidingWindowLimiter(1000, ONE_MINUTE_MILLIS, new MutableClock());
 
         assertTrue(limiter.tryReserve(600).isPresent());
         assertTrue(limiter.tryReserve(400).isPresent());
@@ -27,7 +30,7 @@ class SlidingWindowLimiterTest {
 
     @Test
     void correctFreesUpBudgetWhenActualUsageIsLower() {
-        SlidingWindowLimiter limiter = new SlidingWindowLimiter(1000, new MutableClock());
+        SlidingWindowLimiter limiter = new SlidingWindowLimiter(1000, ONE_MINUTE_MILLIS, new MutableClock());
 
         Reservation reservation = limiter.tryReserve(800).orElseThrow();
         assertFalse(limiter.tryReserve(500).isPresent());
@@ -41,7 +44,7 @@ class SlidingWindowLimiterTest {
 
     @Test
     void releaseDropsTheReservationEntirely() {
-        SlidingWindowLimiter limiter = new SlidingWindowLimiter(1000, new MutableClock());
+        SlidingWindowLimiter limiter = new SlidingWindowLimiter(1000, ONE_MINUTE_MILLIS, new MutableClock());
 
         Reservation reservation = limiter.tryReserve(1000).orElseThrow();
         assertFalse(limiter.tryReserve(1).isPresent());
@@ -55,7 +58,7 @@ class SlidingWindowLimiterTest {
     @Test
     void expiredEntriesFreeUpBudgetAfterTheWindowElapses() {
         MutableClock clock = new MutableClock();
-        SlidingWindowLimiter limiter = new SlidingWindowLimiter(1000, clock);
+        SlidingWindowLimiter limiter = new SlidingWindowLimiter(1000, ONE_MINUTE_MILLIS, clock);
 
         limiter.tryReserve(1000).orElseThrow();
         assertFalse(limiter.tryReserve(1).isPresent());
@@ -66,20 +69,20 @@ class SlidingWindowLimiterTest {
     }
 
     @Test
-    void tpmLimitIsAdjustableAtRuntime() {
-        SlidingWindowLimiter limiter = new SlidingWindowLimiter(100, new MutableClock());
+    void limitIsAdjustableAtRuntime() {
+        SlidingWindowLimiter limiter = new SlidingWindowLimiter(100, ONE_MINUTE_MILLIS, new MutableClock());
 
         assertFalse(limiter.tryReserve(200).isPresent());
 
-        limiter.setTpmLimit(500);
+        limiter.setLimit(500);
 
         assertTrue(limiter.tryReserve(200).isPresent());
-        assertEquals(500, limiter.snapshot().tpmLimit());
+        assertEquals(500, limiter.snapshot().limit());
     }
 
     @Test
     void millisUntilAvailableIsZeroWhenBudgetIsFree() {
-        SlidingWindowLimiter limiter = new SlidingWindowLimiter(1000, new MutableClock());
+        SlidingWindowLimiter limiter = new SlidingWindowLimiter(1000, ONE_MINUTE_MILLIS, new MutableClock());
 
         assertEquals(0, limiter.millisUntilAvailable(500));
     }
@@ -87,13 +90,28 @@ class SlidingWindowLimiterTest {
     @Test
     void millisUntilAvailableEstimatesWhenTheOldestReservationExpires() {
         MutableClock clock = new MutableClock();
-        SlidingWindowLimiter limiter = new SlidingWindowLimiter(1000, clock);
+        SlidingWindowLimiter limiter = new SlidingWindowLimiter(1000, ONE_MINUTE_MILLIS, clock);
 
         limiter.tryReserve(1000).orElseThrow();
 
         long wait = limiter.millisUntilAvailable(500);
 
-        assertTrue(wait > 0 && wait <= 60_000, "expected a wait roughly bounded by the 60s window, got " + wait);
+        assertTrue(wait > 0 && wait <= ONE_MINUTE_MILLIS, "expected a wait roughly bounded by the 60s window, got " + wait);
+    }
+
+    @Test
+    void supportsAMuchLongerWindowForTheDailyBudget() {
+        MutableClock clock = new MutableClock();
+        SlidingWindowLimiter dailyLimiter = new SlidingWindowLimiter(1_000_000, ONE_DAY_MILLIS, clock);
+
+        dailyLimiter.tryReserve(1_000_000).orElseThrow();
+        assertFalse(dailyLimiter.tryReserve(1).isPresent());
+
+        clock.advance(Duration.ofHours(23).plusMinutes(59));
+        assertFalse(dailyLimiter.tryReserve(1).isPresent(), "24h window should not have elapsed yet");
+
+        clock.advance(Duration.ofMinutes(2));
+        assertTrue(dailyLimiter.tryReserve(1_000_000).isPresent(), "24h window should have elapsed by now");
     }
 
     /** A {@link Clock} the test can advance manually to exercise window expiry. */

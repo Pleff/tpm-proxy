@@ -3,6 +3,7 @@ package dev.tpmproxy.http;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;
+import dev.tpmproxy.Version;
 import dev.tpmproxy.config.ProxyConfig;
 import dev.tpmproxy.limiter.SlidingWindowLimiter;
 import dev.tpmproxy.stats.ProxyStats;
@@ -11,17 +12,20 @@ import java.io.IOException;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
-/** GET /internal/status - live TPM budget snapshot plus lifetime stats (SPEC.md Section 7). */
+/** GET /internal/status - live TPM + daily budget snapshot plus lifetime stats (SPEC.md Section 7). */
 public class StatusHandler implements HttpHandler {
 
     private final ProxyConfig config;
-    private final SlidingWindowLimiter limiter;
+    private final SlidingWindowLimiter tpmLimiter;
+    private final SlidingWindowLimiter dailyLimiter;
     private final ProxyStats stats;
     private final ObjectMapper json;
 
-    public StatusHandler(ProxyConfig config, SlidingWindowLimiter limiter, ProxyStats stats, ObjectMapper json) {
+    public StatusHandler(ProxyConfig config, SlidingWindowLimiter tpmLimiter, SlidingWindowLimiter dailyLimiter,
+                          ProxyStats stats, ObjectMapper json) {
         this.config = config;
-        this.limiter = limiter;
+        this.tpmLimiter = tpmLimiter;
+        this.dailyLimiter = dailyLimiter;
         this.stats = stats;
         this.json = json;
     }
@@ -34,14 +38,19 @@ public class StatusHandler implements HttpHandler {
             return;
         }
 
-        SlidingWindowLimiter.Snapshot snapshot = limiter.snapshot();
+        SlidingWindowLimiter.Snapshot tpmSnapshot = tpmLimiter.snapshot();
+        SlidingWindowLimiter.Snapshot dailySnapshot = dailyLimiter.snapshot();
 
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("status", "ok");
-        body.put("tpmLimit", snapshot.tpmLimit());
-        body.put("windowUsage", snapshot.windowUsage()); // current tokens/min - it IS the rate, by construction of the 60s window
-        body.put("remaining", snapshot.remaining());
-        body.put("activeReservations", snapshot.activeReservations());
+        body.put("version", Version.get());
+        body.put("tpmLimit", tpmSnapshot.limit());
+        body.put("windowUsage", tpmSnapshot.windowUsage()); // current tokens/min - it IS the rate, by construction of the 60s window
+        body.put("remaining", tpmSnapshot.remaining());
+        body.put("activeReservations", tpmSnapshot.activeReservations());
+        body.put("dailyLimit", dailySnapshot.limit());
+        body.put("dailyUsage", dailySnapshot.windowUsage());
+        body.put("dailyRemaining", dailySnapshot.remaining());
         body.put("langdockBaseUrl", config.langdockBaseUrl());
         body.put("totalTokens", stats.totalTokens());
         body.put("totalRequests", stats.totalRequests());

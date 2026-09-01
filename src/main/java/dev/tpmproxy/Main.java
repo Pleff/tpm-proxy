@@ -22,6 +22,9 @@ public final class Main {
 
     public static final ObjectMapper JSON = new ObjectMapper();
 
+    private static final long ONE_MINUTE_MILLIS = 60_000L;
+    private static final long ONE_DAY_MILLIS = 24 * 60 * 60 * 1000L;
+
     public static void main(String[] args) {
         ProxyConfig config;
         try {
@@ -32,7 +35,8 @@ public final class Main {
             return;
         }
 
-        SlidingWindowLimiter limiter = new SlidingWindowLimiter(config.initialTpmLimit());
+        SlidingWindowLimiter tpmLimiter = new SlidingWindowLimiter(config.initialTpmLimit(), ONE_MINUTE_MILLIS);
+        SlidingWindowLimiter dailyLimiter = new SlidingWindowLimiter(config.initialDailyTokenLimit(), ONE_DAY_MILLIS);
         LangdockClient langdock = new LangdockClient(config.langdockBaseUrl(), config.langdockApiKey());
         TokenEstimator estimator = new TokenEstimator();
         ProxyStats stats = new ProxyStats();
@@ -43,15 +47,17 @@ public final class Main {
                     new InetSocketAddress(InetAddress.getLoopbackAddress(), config.proxyPort()), 0);
             server.setExecutor(Executors.newVirtualThreadPerTaskExecutor());
 
-            server.createContext("/internal/status", new StatusHandler(config, limiter, stats, JSON));
-            server.createContext("/internal/limit", new LimitHandler(limiter, JSON));
-            server.createContext("/v1/messages", new MessagesHandler(config, limiter, langdock, estimator, JSON, stats));
+            server.createContext("/internal/status", new StatusHandler(config, tpmLimiter, dailyLimiter, stats, JSON));
+            server.createContext("/internal/limit", new LimitHandler(tpmLimiter, dailyLimiter, JSON));
+            server.createContext("/v1/messages",
+                    new MessagesHandler(config, tpmLimiter, dailyLimiter, langdock, estimator, JSON, stats));
             server.createContext("/", new DashboardHandler());
 
             server.start();
             System.out.printf(
-                    "tpm-proxy listening on port %d, forwarding to %s (initial TPM limit: %d)%n",
-                    config.proxyPort(), config.langdockBaseUrl(), config.initialTpmLimit());
+                    "tpm-proxy v%s - listening on port %d, forwarding to %s (TPM limit: %d, daily limit: %d)%n",
+                    Version.get(), config.proxyPort(), config.langdockBaseUrl(),
+                    config.initialTpmLimit(), config.initialDailyTokenLimit());
             System.out.printf("tpm-proxy dashboard: http://localhost:%d/%n", config.proxyPort());
         } catch (IOException e) {
             System.err.println("tpm-proxy: failed to start HTTP server - " + e.getMessage());

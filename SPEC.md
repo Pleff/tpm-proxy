@@ -10,10 +10,11 @@ konfigurierbaren Upstream (`ANTHROPIC_BASE_URL` /
 gegen Langdock zu sprechen, zeigen sie auf `tpm-proxy`, der:
 
 1. **Tokens zählt**, die durch ihn hindurchfließen (Input + Output,
-   pro Request und kumulativ über ein rollierendes Zeitfenster), und
-2. die **Geschwindigkeit** (effektives Tokens-Per-Minute-Budget, mit
-   dem an Langdock weitergeleitet wird) **zur Laufzeit einstellbar**
-   macht — ohne Neustart des Prozesses.
+   pro Request und kumulativ über zwei rollierende Zeitfenster), und
+2. die **Geschwindigkeit** (TPM-Budget, 60s-Fenster) **und** ein
+   **Tages-Budget** (TPD, 24h-Fenster) **zur Laufzeit einstellbar**
+   macht — ohne Neustart des Prozesses, sowohl über ENV-Variablen als
+   Startwert als auch über das Web-Dashboard (Abschnitt 7).
 
 **Hintergrund/Motivation:** Langdocks Anthropic-kompatibler Endpunkt
 hat standardmäßig ein Limit von **500 RPM und 60.000 TPM**, wobei das
@@ -36,10 +37,11 @@ dieselbe Budget-Logik (Abschnitt 5).
 
 - Keine getrennten Budgets pro Tool (opencode vs. Claude Code CLI)
   oder pro Nutzer — **ein** gemeinsames, lokal konfiguriertes
-  TPM-Budget für allen Traffic, der durch diese Proxy-Instanz läuft.
-- Kein RPM- oder TPD-Limit (nur TPM). Langdocks eigenes RPM-Limit
-  (500 RPM) wird nicht separat durchgesetzt, nur beobachtet
-  (Passthrough der `429`-Antworten, falls Langdock selbst blockt).
+  TPM- und TPD-Budget für allen Traffic, der durch diese
+  Proxy-Instanz läuft.
+- Kein RPM-Limit. Langdocks eigenes RPM-Limit (500 RPM) wird nicht
+  separat durchgesetzt, nur beobachtet (Passthrough der
+  `429`-Antworten, falls Langdock selbst blockt).
 - Keine Persistenz des Zählerstands über Neustarts hinweg (in-memory
   reicht für v1).
 - Kein Caching, keine Request-Transformation der Message-Payload
@@ -59,10 +61,11 @@ dieselbe Budget-Logik (Abschnitt 5).
   weitergereicht (SSE-Passthrough), während ein einfacher
   SSE-Parser mitliest, um `message_start`/`message_delta`-Events für
   die Token-Buchhaltung zu erkennen (siehe 5.1).
-- **State:** in-memory Sliding-Window-Zähler für verbrauchte Tokens
-  pro Minute, **laufzeit-veränderbares** Limit (siehe 5.2/5.4).
-  Thread-safe, da Requests von mehreren Tools parallel eintreffen
-  können.
+- **State:** zwei unabhängige, in-memory Sliding-Window-Zähler (60s
+  für TPM, 24h für TPD) mit jeweils **laufzeit-veränderbarem** Limit
+  (siehe 5.2/5.4/5.5) — gleiche generische Implementierung, nur
+  unterschiedliche Fenstergröße. Thread-safe, da Requests von
+  mehreren Tools parallel eintreffen können.
 
 ```
 opencode ─┐
@@ -86,13 +89,28 @@ Code CLI ─┘        ├─ 1. Auth/Validierung (lokaler Client-Token, optiona
 |---|---|---|
 | `LANGDOCK_API_KEY` | ja | Langdock API-Key. Wird beim Forward als `Authorization: Bearer <key>` gesetzt (Langdock nutzt Bearer-Auth, **kein** `x-api-key` wie die native Anthropic API). |
 | `LANGDOCK_BASE_URL` | nein (Default `https://api.langdock.com/anthropic/eu`) | Ziel-Endpunkt. `/anthropic/eu` oder `/anthropic/us` je nach Workspace-Region; bei Dedicated-Deployment stattdessen `https://<deployment-domain>/anthropic`. |
-| `TPM_LIMIT` | ja | Start-Wert für das durchgesetzte TPM-Budget (Input + Output) pro rollierendem 60s-Fenster. Zur Laufzeit änderbar (5.4). Sollte spürbar unter Langdocks geteiltem 60.000-TPM-Workspace-Limit liegen, um Headroom für andere Nutzer/Tools zu lassen. |
+| `TPM_LIMIT` | nein (Default `40000`) | Start-Wert für das durchgesetzte TPM-Budget (Input + Output) pro rollierendem 60s-Fenster. Zur Laufzeit änderbar (5.4). Sollte spürbar unter Langdocks geteiltem 60.000-TPM-Workspace-Limit liegen, um Headroom für andere Nutzer/Tools zu lassen. |
+| `MAX_TOKENS_PER_DAY` | nein (Default `1000000`) | Start-Wert für das durchgesetzte Tages-Budget (Input + Output) pro rollierendem 24h-Fenster. Zur Laufzeit änderbar (5.4/5.5). |
 | `PROXY_PORT` | nein (Default `8080`) | Port, auf dem der Proxy lauscht. |
 | `PROXY_CLIENT_TOKEN` | nein | Falls gesetzt: Clients (opencode, Claude Code CLI) müssen diesen Token mitsenden, um den Proxy zu nutzen. |
-| `QUEUE_TIMEOUT_MS` | nein (Default `30000`) | Wie lange ein Request maximal auf freies Budget wartet, bevor er mit 429 abgelehnt wird. |
+| `QUEUE_TIMEOUT_MS` | nein (Default `30000`) | Wie lange ein Request maximal auf freies TPM-Budget wartet, bevor er mit 429 abgelehnt wird. Gilt nicht für das Tages-Budget (5.5). |
 
-Der Proxy validiert beim Start, dass `LANGDOCK_API_KEY` und
-`TPM_LIMIT` gesetzt sind, und bricht sonst mit klarer Fehlermeldung ab.
+Der Proxy validiert beim Start nur, dass `LANGDOCK_API_KEY` gesetzt
+ist, und bricht sonst mit klarer Fehlermeldung ab. `TPM_LIMIT` und
+`MAX_TOKENS_PER_DAY` sind optional — fehlen sie, greifen die
+Default-Werte aus der Tabelle oben.
+
+Beim Start gibt der Proxy immer eine saubere, einzeilige
+Start-Zeile mit Versionsnummer, Port, Ziel-Endpunkt und den aktiven
+Start-Limits aus, z.B.:
+
+```
+tpm-proxy v0.1.0-SNAPSHOT - listening on port 8080, forwarding to https://api.langdock.com/anthropic/eu (TPM limit: 40000, daily limit: 1000000)
+```
+
+Die Versionsnummer stammt aus dem Maven-Projekt (`pom.xml`) und wird
+beim Build per Resource-Filtering in eine Property-Datei im Jar
+geschrieben — kein manuelles Pflegen einer zweiten Versionsangabe.
 
 **CLI-seitige Einrichtung** (Beispiel Claude Code, analog für opencode
 mit dessen jeweiligen Env-Var-Namen):
@@ -168,16 +186,38 @@ CLI) nicht dasselbe Budget doppelt verplanen.
 
 ### 5.4 Laufzeit-einstellbare Geschwindigkeit
 
-Kernanforderung: das TPM-Budget muss **ohne Neustart** verändert
-werden können.
+Kernanforderung: TPM- **und** Tages-Budget müssen **ohne Neustart**
+verändert werden können — sowohl per API als auch über das
+Web-Dashboard (Abschnitt 7).
 
-- `PUT /internal/limit` mit Body `{"tpmLimit": <int>}` setzt das
-  aktive Limit sofort neu; wirkt ab dem nächsten Budget-Check.
-- `GET /internal/limit` liefert das aktuell aktive Limit.
-- Änderungen werden geloggt (alter Wert → neuer Wert, Zeitstempel).
-- v1 hält den Wert nur in-memory (kein Zurückschreiben in
-  Konfigurationsdateien); nach einem Neustart gilt wieder der
-  `TPM_LIMIT`-Startwert aus der Umgebung.
+- `PUT /internal/limit` mit Body `{"tpmLimit": <int>}`,
+  `{"dailyLimit": <int>}` oder beidem zusammen setzt die jeweils
+  angegebenen Limits sofort neu; wirkt ab dem nächsten Budget-Check.
+  Nicht angegebene Felder bleiben unverändert.
+- `GET /internal/limit` liefert `{"tpmLimit": <int>, "dailyLimit": <int>}`.
+- Änderungen werden geloggt (alter Wert → neuer Wert, pro Limit
+  getrennt).
+- v1 hält die Werte nur in-memory (kein Zurückschreiben in
+  Konfigurationsdateien); nach einem Neustart gelten wieder die
+  `TPM_LIMIT`/`MAX_TOKENS_PER_DAY`-Startwerte (bzw. deren Defaults).
+
+### 5.5 Tagesbudget (TPD, 24h-Fenster)
+
+Gleicher Sliding-Window-Mechanismus wie 5.2, nur mit einem
+24-Stunden- statt 60-Sekunden-Fenster, als **zweite, unabhängige**
+Instanz desselben generischen Limiters. Jeder Request muss **beide**
+Budgets passieren:
+
+1. TPM-Reservierung wie in 5.1/5.3 (inkl. Warten bis
+   `QUEUE_TIMEOUT_MS`).
+2. Erst danach eine **nicht-blockierende** Tages-Reservierung. Ist
+   das Tages-Budget erschöpft, wird die bereits gemachte
+   TPM-Reservierung wieder freigegeben und der Request sofort mit
+   `429` abgelehnt (`rate_limit_error`, Meldungstext nennt "daily
+   token" statt "TPM") — Warten ergibt hier keinen Sinn, da ein
+   24h-Fenster sich nicht in Sekunden nennenswert leert.
+3. Korrektur nach Abschluss (5.1) wird auf **beide** Reservierungen
+   angewendet.
 
 ## 6. Request/Response-Handling
 
@@ -203,11 +243,19 @@ werden können.
 
 ## 7. Beobachtbarkeit
 
-- `GET /internal/status`: aktueller Fensterverbrauch, aktives
-  `tpmLimit`, verbleibendes Budget, Anzahl aktuell wartender
-  Requests, Quelle (falls unterscheidbar) pro Tool.
-- Strukturiertes Logging pro Request: Preflight-Schätzung,
-  tatsächliche Usage, Wartezeit (falls gequeued), finaler Statuscode.
+- `GET /internal/status`: Version, aktueller TPM- und
+  TPD-Fensterverbrauch, aktive Limits, verbleibendes Budget je
+  Fenster, Anzahl aktiver TPM-Reservierungen, Lifetime-Statistik
+  (Tokens/Requests seit Prozessstart) und Details zum letzten
+  Request (Modell, Streaming, Tokens, Dauer).
+- `GET /`: Web-Dashboard (statisches HTML, pollt `/internal/status`
+  alle 2s) — zeigt dieselben Werte visuell inkl. Fortschrittsbalken
+  für TPM- und Tagesbudget, und bietet ein Formular, um `tpmLimit`
+  und/oder `dailyLimit` per `PUT /internal/limit` zu ändern.
+- Ein Log pro Request auf stdout: Modell, Streaming-Flag, Tokens
+  (in/out), Verarbeitungsdauer, aktueller TPM- und TPD-Fensterstand,
+  Lifetime-Summe. Lokal abgelehnte Requests (TPM oder TPD erschöpft)
+  und Upstream-Fehler bekommen eigene, klar markierte Logzeilen.
 
 ## 8. Sicherheit
 
@@ -220,7 +268,7 @@ werden können.
 
 - Getrennte Budgets/Kontingente pro Tool (opencode vs. Claude Code CLI)
   oder pro `PROXY_CLIENT_TOKEN`.
-- Zusätzliche Limits: RPM-Durchsetzung, TPD.
+- Zusätzliche Limits: RPM-Durchsetzung.
 - Persistenter/verteilter Zähler für Multi-Instanz-Betrieb.
 
 ## 10. Offene Fragen

@@ -16,31 +16,48 @@
   .bar-fill { background: #2a7; height: 100%; width: 0; transition: width .3s; }
   .bar-fill.warn { background: #d90; }
   .bar-fill.danger { background: #d33; }
-  form { display: flex; gap: .5rem; align-items: center; }
-  input[type=number] { width: 8rem; padding: .4rem; }
-  button { padding: .4rem .8rem; cursor: pointer; }
-  #limitMsg { font-size: .85rem; opacity: .8; min-height: 1.2em; margin-top: .5rem; }
+  form { display: flex; flex-direction: column; gap: .6rem; }
+  .field-row { display: flex; justify-content: space-between; align-items: center; gap: .5rem; }
+  .field-row label { opacity: .7; }
+  input[type=number] { width: 10rem; padding: .4rem; }
+  button { padding: .4rem .8rem; cursor: pointer; align-self: flex-start; }
+  #limitMsg { font-size: .85rem; opacity: .8; min-height: 1.2em; margin-top: .25rem; }
   code { background: #8882; padding: .1rem .3rem; border-radius: 4px; }
   footer { font-size: .8rem; opacity: .6; }
 </style>
 </head>
 <body>
-  <h1>tpm-proxy</h1>
-  <p style="opacity:.7">Lokaler TPM-Rate-Limiting-Proxy vor Langdock</p>
+  <h1>tpm-proxy <span id="version" style="font-size:.8rem;opacity:.5"></span></h1>
+  <p style="opacity:.7">Lokaler TPM-/Tages-Rate-Limiting-Proxy vor Langdock</p>
 
   <div class="card">
-    <h2>Aktuelles Budget</h2>
+    <h2>TPM-Budget (60s-Fenster = aktuelle Rate)</h2>
     <div class="stat"><span>TPM-Limit</span><span id="tpmLimit">-</span></div>
-    <div class="stat"><span>Auslastung (60s-Fenster = aktuelle Rate)</span><span id="windowUsage">-</span></div>
+    <div class="stat"><span>Auslastung</span><span id="windowUsage">-</span></div>
     <div class="stat"><span>Verbleibend</span><span id="remaining">-</span></div>
     <div class="stat"><span>Aktive Reservierungen</span><span id="activeReservations">-</span></div>
-    <div class="bar-track"><div class="bar-fill" id="bar"></div></div>
+    <div class="bar-track"><div class="bar-fill" id="tpmBar"></div></div>
   </div>
 
   <div class="card">
-    <h2>Limit ändern</h2>
+    <h2>Tagesbudget (24h-Fenster)</h2>
+    <div class="stat"><span>Tages-Limit</span><span id="dailyLimit">-</span></div>
+    <div class="stat"><span>Auslastung</span><span id="dailyUsage">-</span></div>
+    <div class="stat"><span>Verbleibend</span><span id="dailyRemaining">-</span></div>
+    <div class="bar-track"><div class="bar-fill" id="dailyBar"></div></div>
+  </div>
+
+  <div class="card">
+    <h2>Limits ändern</h2>
     <form id="limitForm">
-      <input type="number" id="newLimit" min="1" step="1" placeholder="neues TPM-Limit" required>
+      <div class="field-row">
+        <label for="newTpmLimit">TPM-Limit</label>
+        <input type="number" id="newTpmLimit" min="1" step="1" placeholder="unverändert">
+      </div>
+      <div class="field-row">
+        <label for="newDailyLimit">Tages-Limit</label>
+        <input type="number" id="newDailyLimit" min="1" step="1" placeholder="unverändert">
+      </div>
       <button type="submit">Setzen</button>
     </form>
     <div id="limitMsg"></div>
@@ -63,24 +80,39 @@
   <footer>Langdock-Endpunkt: <code id="baseUrl">-</code> · aktualisiert alle 2s</footer>
 
 <script>
+function barClass(pct) {
+  return 'bar-fill' + (pct > 90 ? ' danger' : pct > 70 ? ' warn' : '');
+}
+
 async function refresh() {
   try {
     const res = await fetch('/internal/status');
     if (!res.ok) throw new Error('status ' + res.status);
     const s = await res.json();
 
+    document.getElementById('version').textContent = s.version ? ('v' + s.version) : '';
     document.getElementById('tpmLimit').textContent = s.tpmLimit;
     document.getElementById('windowUsage').textContent = s.windowUsage;
     document.getElementById('remaining').textContent = s.remaining;
     document.getElementById('activeReservations').textContent = s.activeReservations;
+
+    document.getElementById('dailyLimit').textContent = s.dailyLimit;
+    document.getElementById('dailyUsage').textContent = s.dailyUsage;
+    document.getElementById('dailyRemaining').textContent = s.dailyRemaining;
+
     document.getElementById('totalTokens').textContent = s.totalTokens;
     document.getElementById('totalRequests').textContent = s.totalRequests;
     document.getElementById('baseUrl').textContent = s.langdockBaseUrl;
 
-    const pct = s.tpmLimit > 0 ? Math.min(100, (s.windowUsage / s.tpmLimit) * 100) : 0;
-    const bar = document.getElementById('bar');
-    bar.style.width = pct + '%';
-    bar.className = 'bar-fill' + (pct > 90 ? ' danger' : pct > 70 ? ' warn' : '');
+    const tpmPct = s.tpmLimit > 0 ? Math.min(100, (s.windowUsage / s.tpmLimit) * 100) : 0;
+    const tpmBar = document.getElementById('tpmBar');
+    tpmBar.style.width = tpmPct + '%';
+    tpmBar.className = barClass(tpmPct);
+
+    const dailyPct = s.dailyLimit > 0 ? Math.min(100, (s.dailyUsage / s.dailyLimit) * 100) : 0;
+    const dailyBar = document.getElementById('dailyBar');
+    dailyBar.style.width = dailyPct + '%';
+    dailyBar.className = barClass(dailyPct);
 
     const last = s.lastRequest;
     document.getElementById('lastModel').textContent = last ? last.model : '-';
@@ -90,9 +122,13 @@ async function refresh() {
       : '-';
     document.getElementById('lastDuration').textContent = last ? `${last.durationMillis} ms` : '-';
 
-    const limitInput = document.getElementById('newLimit');
-    if (document.activeElement !== limitInput) {
-      limitInput.placeholder = 'aktuell: ' + s.tpmLimit;
+    const tpmInput = document.getElementById('newTpmLimit');
+    if (document.activeElement !== tpmInput) {
+      tpmInput.placeholder = 'aktuell: ' + s.tpmLimit;
+    }
+    const dailyInput = document.getElementById('newDailyLimit');
+    if (document.activeElement !== dailyInput) {
+      dailyInput.placeholder = 'aktuell: ' + s.dailyLimit;
     }
   } catch (e) {
     document.getElementById('limitMsg').textContent = 'Verbindung zum Proxy verloren...';
@@ -101,12 +137,20 @@ async function refresh() {
 
 document.getElementById('limitForm').addEventListener('submit', async (e) => {
   e.preventDefault();
-  const input = document.getElementById('newLimit');
-  const value = parseInt(input.value, 10);
+  const tpmInput = document.getElementById('newTpmLimit');
+  const dailyInput = document.getElementById('newDailyLimit');
   const msg = document.getElementById('limitMsg');
 
-  if (!value || value <= 0) {
-    msg.textContent = 'Bitte eine positive Zahl eingeben.';
+  const body = {};
+  if (tpmInput.value !== '') body.tpmLimit = parseInt(tpmInput.value, 10);
+  if (dailyInput.value !== '') body.dailyLimit = parseInt(dailyInput.value, 10);
+
+  if (Object.keys(body).length === 0) {
+    msg.textContent = 'Bitte mindestens ein Limit eingeben.';
+    return;
+  }
+  if ((body.tpmLimit !== undefined && body.tpmLimit <= 0) || (body.dailyLimit !== undefined && body.dailyLimit <= 0)) {
+    msg.textContent = 'Werte müssen positiv sein.';
     return;
   }
 
@@ -114,11 +158,12 @@ document.getElementById('limitForm').addEventListener('submit', async (e) => {
     const res = await fetch('/internal/limit', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ tpmLimit: value })
+      body: JSON.stringify(body)
     });
     if (res.ok) {
-      msg.textContent = `Limit auf ${value} gesetzt.`;
-      input.value = '';
+      msg.textContent = 'Limits aktualisiert.';
+      tpmInput.value = '';
+      dailyInput.value = '';
       refresh();
     } else {
       const err = await res.json();

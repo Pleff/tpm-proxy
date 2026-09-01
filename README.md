@@ -2,10 +2,11 @@
 
 Lokaler Reverse-Proxy zwischen Coding-CLI-Tools (opencode, Claude Code
 CLI) und [Langdocks](https://langdock.com) Anthropic-kompatiblem
-Endpunkt. Setzt ein lokal konfigurierbares **Tokens-Per-Minute
-(TPM)**-Budget durch, bevor Requests weitergeleitet werden — damit ein
-einzelnes Tool nicht das geteilte Workspace-Kontingent bei Langdock
-aufbraucht und allen anderen Nutzer:innen 429-Fehler beschert.
+Endpunkt. Setzt zwei lokal konfigurierbare Budgets durch, bevor
+Requests weitergeleitet werden — **Tokens-Per-Minute (TPM)** und ein
+**Tages-Limit (TPD)** — damit ein einzelnes Tool nicht das geteilte
+Workspace-Kontingent bei Langdock aufbraucht und allen anderen
+Nutzer:innen 429-Fehler beschert.
 
 Das vollständige Design (Architektur, Sliding-Window-Algorithmus,
 offene Fragen) steht in [SPEC.md](SPEC.md). Dieses Dokument ist die
@@ -33,14 +34,17 @@ Alles über Umgebungsvariablen:
 | Variable | Pflicht | Default | Beschreibung |
 |---|---|---|---|
 | `LANGDOCK_API_KEY` | ja | – | Langdock-API-Key. Wird als `Authorization: Bearer <key>` an Langdock geschickt. |
-| `TPM_LIMIT` | ja | – | Start-TPM-Budget (Input+Output-Tokens pro rollierendem 60s-Fenster). Zur Laufzeit änderbar (siehe unten). |
+| `TPM_LIMIT` | nein | `40000` | Start-TPM-Budget (Input+Output-Tokens pro rollierendem 60s-Fenster). Zur Laufzeit änderbar (siehe unten). |
+| `MAX_TOKENS_PER_DAY` | nein | `1000000` | Start-Tages-Budget (Input+Output-Tokens pro rollierendem 24h-Fenster). Zur Laufzeit änderbar (siehe unten). |
 | `LANGDOCK_BASE_URL` | nein | `https://api.langdock.com/anthropic/eu` | Ziel-Endpunkt. `/anthropic/eu` oder `/anthropic/us` je nach Workspace-Region; bei Dedicated-Deployment `https://<deployment-domain>/anthropic`. |
 | `PROXY_PORT` | nein | `8080` | **Port, auf dem der Proxy lokal lauscht.** Frei wählbar, z.B. wenn `8080` bereits belegt ist. |
 | `PROXY_CLIENT_TOKEN` | nein | – | Falls gesetzt: Clients müssen diesen Token mitsenden (als `x-api-key`-Header oder `Authorization: Bearer <token>`), um den Proxy zu benutzen. Ohne diese Variable ist die lokale Auth-Prüfung aus. |
-| `QUEUE_TIMEOUT_MS` | nein | `30000` | Wie lange ein Request maximal auf freies Budget wartet, bevor er mit `429` abgelehnt wird. |
+| `QUEUE_TIMEOUT_MS` | nein | `30000` | Wie lange ein Request maximal auf freies TPM-Budget wartet, bevor er mit `429` abgelehnt wird. Gilt nicht für das Tages-Budget (das lehnt sofort ab, siehe SPEC.md §5.5). |
 
-Der Proxy validiert `LANGDOCK_API_KEY` und `TPM_LIMIT` beim Start und
-bricht mit klarer Fehlermeldung ab, falls sie fehlen.
+Einzig `LANGDOCK_API_KEY` ist Pflicht — fehlt sie, bricht der Proxy
+beim Start mit klarer Fehlermeldung ab. `TPM_LIMIT` und
+`MAX_TOKENS_PER_DAY` sind optional; ohne sie greifen die Defaults
+oben.
 
 ## Starten
 
@@ -60,8 +64,14 @@ LANGDOCK_API_KEY=dein-langdock-key TPM_LIMIT=40000 java -jar target/tpm-proxy.ja
 ```
 
 Der Proxy bindet ausschließlich an `localhost` (nicht netzwerkweit
-erreichbar) und gibt beim Start Port, Ziel-Endpunkt und Dashboard-URL
-aus.
+erreichbar) und gibt beim Start immer eine saubere Start-Zeile mit
+Versionsnummer, Port, Ziel-Endpunkt und den aktiven Start-Limits aus,
+z.B.:
+
+```
+tpm-proxy v0.1.0-SNAPSHOT - listening on port 8080, forwarding to https://api.langdock.com/anthropic/eu (TPM limit: 40000, daily limit: 1000000)
+tpm-proxy dashboard: http://localhost:8080/
+```
 
 ## Web-Dashboard
 
@@ -72,7 +82,10 @@ Zeigt live (Refresh alle 2s):
 
 - aktuelles TPM-Limit, Auslastung im 60s-Fenster (= aktuelle Rate),
   verbleibendes Budget, aktive Reservierungen
-- ein Formular, um das TPM-Limit **ohne Neustart** zu ändern
+- aktuelles Tages-Limit, Auslastung im 24h-Fenster, verbleibendes
+  Tagesbudget
+- ein Formular, um TPM-Limit und/oder Tages-Limit **ohne Neustart**
+  zu ändern (Felder sind unabhängig — nur ausgefüllte werden gesetzt)
 - Lifetime-Statistik (Tokens/Requests seit Prozessstart)
 - Details zum letzten Request (Modell, Streaming, Tokens, Dauer)
 
@@ -84,10 +97,10 @@ zusätzliche Server-Logik.
 
 | Methode & Pfad | Zweck |
 |---|---|
-| `POST /v1/messages` | Kernpfad: Budget-Check, Forward an Langdock (streaming oder nicht), Buchhaltung. |
-| `GET /internal/status` | JSON-Snapshot: Limit, Auslastung, Lifetime-Stats, letzter Request. |
-| `GET /internal/limit` | Aktuelles TPM-Limit als JSON. |
-| `PUT /internal/limit` | TPM-Limit ändern, Body `{"tpmLimit": <int>}`. Wirkt sofort, nur in-memory (kein Neustart-Persistenz). |
+| `POST /v1/messages` | Kernpfad: TPM- und TPD-Budget-Check, Forward an Langdock (streaming oder nicht), Buchhaltung. |
+| `GET /internal/status` | JSON-Snapshot: Version, TPM- und TPD-Limit/Auslastung, Lifetime-Stats, letzter Request. |
+| `GET /internal/limit` | Aktuelles `tpmLimit` und `dailyLimit` als JSON. |
+| `PUT /internal/limit` | Limits ändern, Body `{"tpmLimit": <int>}`, `{"dailyLimit": <int>}` oder beides zusammen. Wirkt sofort, nur in-memory (kein Neustart-Persistenz). |
 | `GET /` | Web-Dashboard (siehe oben). |
 
 ## Live-Logging
@@ -95,11 +108,12 @@ zusätzliche Server-Logik.
 Pro Request erscheint eine Zeile auf stdout, z.B.:
 
 ```
-tpm-proxy: model=claude-sonnet-5 stream=false tokens=35 (in=10 out=25) duration=842ms | window=35/40000 tpm | lifetime=35 tokens / 1 requests
+tpm-proxy: model=claude-sonnet-5 stream=false tokens=35 (in=10 out=25) duration=842ms | window=35/40000 tpm | day=35/1000000 | lifetime=35 tokens / 1 requests
 ```
 
-Bei lokal abgelehnten Requests (Budget erschöpft) eine `REJECTED`-Zeile
-mit `retryAfter`, bei Fehlern von Langdock eine `upstream_status=...`-Zeile.
+Bei lokal abgelehnten Requests (TPM- oder Tages-Budget erschöpft) eine
+`REJECTED`-Zeile mit Angabe, welches Budget betroffen war, sowie
+`retryAfter`; bei Fehlern von Langdock eine `upstream_status=...`-Zeile.
 
 ## CLI-Integration
 
@@ -148,10 +162,12 @@ gesetzt ist — dann muss der Wert damit übereinstimmen.
   unterstützt `/v1/messages/count_tokens` nicht (bestätigt: `404`).
   Die Input-Token-Schätzung vor dem Forward nutzt daher eine
   Zeichen/4-Heuristik statt eines exakten Werts.
-- **Ein gemeinsames Budget** für allen Traffic durch diese
-  Proxy-Instanz — keine getrennten Kontingente pro Tool oder Client.
-- **Kein RPM/TPD-Limit**, nur TPM.
+- **Ein gemeinsames Budget** (TPM und TPD) für allen Traffic durch
+  diese Proxy-Instanz — keine getrennten Kontingente pro Tool oder
+  Client.
+- **Kein RPM-Limit.**
 - **Keine Persistenz** über Neustarts hinweg (Zähler und laufzeit-
-  geändertes Limit sind in-memory).
+  geänderte Limits sind in-memory; nach Neustart gelten wieder die
+  ENV-Var-Defaults).
 
 Details und Architektur-Hintergrund: [SPEC.md](SPEC.md).
