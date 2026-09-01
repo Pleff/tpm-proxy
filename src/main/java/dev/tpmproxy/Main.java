@@ -8,6 +8,7 @@ import dev.tpmproxy.http.DashboardHandler;
 import dev.tpmproxy.http.LimitHandler;
 import dev.tpmproxy.http.MessagesHandler;
 import dev.tpmproxy.http.StatusHandler;
+import dev.tpmproxy.limiter.DailyTokenLimiter;
 import dev.tpmproxy.limiter.SlidingWindowLimiter;
 import dev.tpmproxy.stats.ProxyStats;
 import dev.tpmproxy.upstream.LangdockClient;
@@ -22,9 +23,6 @@ public final class Main {
 
     public static final ObjectMapper JSON = new ObjectMapper();
 
-    private static final long ONE_MINUTE_MILLIS = 60_000L;
-    private static final long ONE_DAY_MILLIS = 24 * 60 * 60 * 1000L;
-
     public static void main(String[] args) {
         ProxyConfig config;
         try {
@@ -35,8 +33,8 @@ public final class Main {
             return;
         }
 
-        SlidingWindowLimiter tpmLimiter = new SlidingWindowLimiter(config.initialTpmLimit(), ONE_MINUTE_MILLIS);
-        SlidingWindowLimiter dailyLimiter = new SlidingWindowLimiter(config.initialDailyTokenLimit(), ONE_DAY_MILLIS);
+        SlidingWindowLimiter tpmLimiter = new SlidingWindowLimiter(config.initialTpmLimit());
+        DailyTokenLimiter dailyLimiter = new DailyTokenLimiter(config.initialDailyTokenLimit());
         LangdockClient langdock = new LangdockClient(config.langdockBaseUrl(), config.langdockApiKey());
         TokenEstimator estimator = new TokenEstimator();
         ProxyStats stats = new ProxyStats();

@@ -35,7 +35,7 @@ Alles über Umgebungsvariablen:
 |---|---|---|---|
 | `LANGDOCK_API_KEY` | ja | – | Langdock-API-Key. Wird als `Authorization: Bearer <key>` an Langdock geschickt. |
 | `TPM_LIMIT` | nein | `40000` | Start-TPM-Budget (Input+Output-Tokens pro rollierendem 60s-Fenster). Zur Laufzeit änderbar (siehe unten). |
-| `MAX_TOKENS_PER_DAY` | nein | `1000000` | Start-Tages-Budget (Input+Output-Tokens pro rollierendem 24h-Fenster). Zur Laufzeit änderbar (siehe unten). |
+| `MAX_TOKENS_PER_DAY` | nein | `1000000` | Start-Tages-Budget (Input+Output-Tokens pro Kalendertag, Reset um lokale Mitternacht — **kein** rollierendes 24h-Fenster). Zur Laufzeit änderbar (siehe unten). |
 | `LANGDOCK_BASE_URL` | nein | `https://api.langdock.com/anthropic/eu` | Ziel-Endpunkt. `/anthropic/eu` oder `/anthropic/us` je nach Workspace-Region; bei Dedicated-Deployment `https://<deployment-domain>/anthropic`. |
 | `PROXY_PORT` | nein | `8080` | **Port, auf dem der Proxy lokal lauscht.** Frei wählbar, z.B. wenn `8080` bereits belegt ist. |
 | `PROXY_CLIENT_TOKEN` | nein | – | Falls gesetzt: Clients müssen diesen Token mitsenden (als `x-api-key`-Header oder `Authorization: Bearer <token>`), um den Proxy zu benutzen. Ohne diese Variable ist die lokale Auth-Prüfung aus. |
@@ -82,8 +82,8 @@ Zeigt live (Refresh alle 2s):
 
 - aktuelles TPM-Limit, Auslastung im 60s-Fenster (= aktuelle Rate),
   verbleibendes Budget, aktive Reservierungen
-- aktuelles Tages-Limit, Auslastung im 24h-Fenster, verbleibendes
-  Tagesbudget
+- aktuelles Tages-Limit, Auslastung seit lokaler Mitternacht
+  (Kalendertag-Zähler, kein 24h-Fenster), verbleibendes Tagesbudget
 - ein Formular, um TPM-Limit und/oder Tages-Limit **ohne Neustart**
   zu ändern (Felder sind unabhängig — nur ausgefüllte werden gesetzt)
 - Lifetime-Statistik (Tokens/Requests seit Prozessstart)

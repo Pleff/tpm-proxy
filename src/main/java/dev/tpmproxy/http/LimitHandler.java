@@ -4,25 +4,27 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;
+import dev.tpmproxy.limiter.DailyTokenLimiter;
 import dev.tpmproxy.limiter.SlidingWindowLimiter;
 
 import java.io.IOException;
 import java.util.Map;
 
 /**
- * GET/PUT /internal/limit - runtime-adjustable TPM and daily token budgets
- * (SPEC.md Section 5.4). A PUT may set either or both of {@code tpmLimit} /
- * {@code dailyLimit}; whichever field is present gets updated. Changes take
- * effect immediately and are in-memory only; a restart reverts to the
- * TPM_LIMIT / MAX_TOKENS_PER_DAY startup values.
+ * GET/PUT /internal/limit - runtime-adjustable TPM (60s window) and daily
+ * (calendar-day) token budgets (SPEC.md Section 5.4). A PUT may set either
+ * or both of {@code tpmLimit} / {@code dailyLimit}; whichever field is
+ * present gets updated. Changes take effect immediately and are in-memory
+ * only; a restart reverts to the TPM_LIMIT / MAX_TOKENS_PER_DAY startup
+ * values.
  */
 public class LimitHandler implements HttpHandler {
 
     private final SlidingWindowLimiter tpmLimiter;
-    private final SlidingWindowLimiter dailyLimiter;
+    private final DailyTokenLimiter dailyLimiter;
     private final ObjectMapper json;
 
-    public LimitHandler(SlidingWindowLimiter tpmLimiter, SlidingWindowLimiter dailyLimiter, ObjectMapper json) {
+    public LimitHandler(SlidingWindowLimiter tpmLimiter, DailyTokenLimiter dailyLimiter, ObjectMapper json) {
         this.tpmLimiter = tpmLimiter;
         this.dailyLimiter = dailyLimiter;
         this.json = json;

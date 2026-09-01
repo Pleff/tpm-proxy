@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;
 import dev.tpmproxy.config.ProxyConfig;
+import dev.tpmproxy.limiter.DailyTokenLimiter;
 import dev.tpmproxy.limiter.SlidingWindowLimiter;
 import dev.tpmproxy.limiter.SlidingWindowLimiter.Reservation;
 import dev.tpmproxy.stats.ProxyStats;
@@ -36,13 +37,13 @@ public class MessagesHandler implements HttpHandler {
 
     private final ProxyConfig config;
     private final SlidingWindowLimiter tpmLimiter;
-    private final SlidingWindowLimiter dailyLimiter;
+    private final DailyTokenLimiter dailyLimiter;
     private final LangdockClient langdock;
     private final TokenEstimator estimator;
     private final ObjectMapper json;
     private final ProxyStats stats;
 
-    public MessagesHandler(ProxyConfig config, SlidingWindowLimiter tpmLimiter, SlidingWindowLimiter dailyLimiter,
+    public MessagesHandler(ProxyConfig config, SlidingWindowLimiter tpmLimiter, DailyTokenLimiter dailyLimiter,
                             LangdockClient langdock, TokenEstimator estimator, ObjectMapper json, ProxyStats stats) {
         this.config = config;
         this.tpmLimiter = tpmLimiter;
@@ -107,9 +108,9 @@ public class MessagesHandler implements HttpHandler {
             return;
         }
 
-        // Daily budget: no point blocking on this one - if it's exhausted, waiting a few
-        // seconds won't meaningfully free up a 24h window, so fail fast instead.
-        Optional<Reservation> dailyReserved = dailyLimiter.tryReserve(reservationTokens);
+        // Daily budget: a calendar-day counter, not a rolling window - no point blocking on
+        // it, waiting a few seconds won't bring midnight any closer, so fail fast instead.
+        Optional<DailyTokenLimiter.Reservation> dailyReserved = dailyLimiter.tryReserve(reservationTokens);
         if (dailyReserved.isEmpty()) {
             tpmLimiter.release(tpmReservation);
             long retryAfterMillis = dailyLimiter.millisUntilAvailable(reservationTokens);
@@ -265,11 +266,11 @@ public class MessagesHandler implements HttpHandler {
         long durationMillis = millisSince(startNanos);
         stats.recordCompletedRequest(model, streaming, inputTokens, outputTokens, durationMillis);
         SlidingWindowLimiter.Snapshot tpmSnapshot = tpmLimiter.snapshot();
-        SlidingWindowLimiter.Snapshot dailySnapshot = dailyLimiter.snapshot();
+        DailyTokenLimiter.Snapshot dailySnapshot = dailyLimiter.snapshot();
         System.out.printf(
                 "tpm-proxy: model=%s stream=%b tokens=%d (in=%d out=%d) duration=%dms | window=%d/%d tpm | day=%d/%d | lifetime=%d tokens / %d requests%n",
                 model, streaming, inputTokens + outputTokens, inputTokens, outputTokens, durationMillis,
-                tpmSnapshot.windowUsage(), tpmSnapshot.limit(), dailySnapshot.windowUsage(), dailySnapshot.limit(),
+                tpmSnapshot.windowUsage(), tpmSnapshot.limit(), dailySnapshot.usage(), dailySnapshot.limit(),
                 stats.totalTokens(), stats.totalRequests());
     }
 
@@ -309,6 +310,6 @@ public class MessagesHandler implements HttpHandler {
         return false;
     }
 
-    private record Budget(Reservation tpm, Reservation daily) {
+    private record Budget(Reservation tpm, DailyTokenLimiter.Reservation daily) {
     }
 }

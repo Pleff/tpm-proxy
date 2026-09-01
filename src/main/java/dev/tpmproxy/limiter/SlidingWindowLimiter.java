@@ -7,29 +7,29 @@ import java.util.Optional;
 import java.util.concurrent.locks.ReentrantLock;
 
 /**
- * Generic rolling-window token budget (SPEC.md Section 5.2/5.4). Used both
- * for the 60s TPM budget and the 24h daily budget - the window length is a
- * constructor parameter, not hardcoded. Not fixed buckets - expired entries
- * are evicted lazily on every access. The limit itself is mutable at runtime.
+ * Rolling 60s TPM budget (SPEC.md Section 5.2). Not fixed minute buckets -
+ * expired entries are evicted lazily on every access. The limit itself is
+ * mutable at runtime (Section 5.4, PUT /internal/limit). The daily budget
+ * (Section 5.5) is a calendar-day counter instead - see DailyTokenLimiter,
+ * not a reuse of this class.
  */
 public final class SlidingWindowLimiter {
 
+    private static final long WINDOW_MILLIS = 60_000L;
     private static final long POLL_INTERVAL_MILLIS = 250L;
 
     private final Deque<Reservation> window = new ArrayDeque<>();
     private final ReentrantLock lock = new ReentrantLock();
     private final Clock clock;
-    private final long windowMillis;
     private volatile int limit;
     private long currentSum = 0;
 
-    public SlidingWindowLimiter(int initialLimit, long windowMillis) {
-        this(initialLimit, windowMillis, Clock.systemUTC());
+    public SlidingWindowLimiter(int initialLimit) {
+        this(initialLimit, Clock.systemUTC());
     }
 
-    SlidingWindowLimiter(int initialLimit, long windowMillis, Clock clock) {
+    SlidingWindowLimiter(int initialLimit, Clock clock) {
         this.limit = initialLimit;
-        this.windowMillis = windowMillis;
         this.clock = clock;
     }
 
@@ -86,7 +86,7 @@ public final class SlidingWindowLimiter {
                 currentSum += (long) actualTokens - reservation.tokens;
                 reservation.tokens = actualTokens;
             }
-            // Already evicted (>window old): leave it - it aged out on its own.
+            // Already evicted (>60s old): leave it - it aged out on its own.
         } finally {
             lock.unlock();
         }
@@ -111,10 +111,10 @@ public final class SlidingWindowLimiter {
             for (Reservation r : window) {
                 freed += r.tokens;
                 if (freed >= deficit) {
-                    return Math.max(0, (r.timestamp + windowMillis) - clock.millis());
+                    return Math.max(0, (r.timestamp + WINDOW_MILLIS) - clock.millis());
                 }
             }
-            return windowMillis;
+            return WINDOW_MILLIS;
         } finally {
             lock.unlock();
         }
@@ -131,7 +131,7 @@ public final class SlidingWindowLimiter {
     }
 
     private void evictExpired() {
-        long cutoff = clock.millis() - windowMillis;
+        long cutoff = clock.millis() - WINDOW_MILLIS;
         while (!window.isEmpty() && window.peekFirst().timestamp < cutoff) {
             Reservation expired = window.pollFirst();
             currentSum -= expired.tokens;

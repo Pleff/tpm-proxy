@@ -5,6 +5,7 @@ import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;
 import dev.tpmproxy.Version;
 import dev.tpmproxy.config.ProxyConfig;
+import dev.tpmproxy.limiter.DailyTokenLimiter;
 import dev.tpmproxy.limiter.SlidingWindowLimiter;
 import dev.tpmproxy.stats.ProxyStats;
 
@@ -17,11 +18,11 @@ public class StatusHandler implements HttpHandler {
 
     private final ProxyConfig config;
     private final SlidingWindowLimiter tpmLimiter;
-    private final SlidingWindowLimiter dailyLimiter;
+    private final DailyTokenLimiter dailyLimiter;
     private final ProxyStats stats;
     private final ObjectMapper json;
 
-    public StatusHandler(ProxyConfig config, SlidingWindowLimiter tpmLimiter, SlidingWindowLimiter dailyLimiter,
+    public StatusHandler(ProxyConfig config, SlidingWindowLimiter tpmLimiter, DailyTokenLimiter dailyLimiter,
                           ProxyStats stats, ObjectMapper json) {
         this.config = config;
         this.tpmLimiter = tpmLimiter;
@@ -39,7 +40,7 @@ public class StatusHandler implements HttpHandler {
         }
 
         SlidingWindowLimiter.Snapshot tpmSnapshot = tpmLimiter.snapshot();
-        SlidingWindowLimiter.Snapshot dailySnapshot = dailyLimiter.snapshot();
+        DailyTokenLimiter.Snapshot dailySnapshot = dailyLimiter.snapshot();
 
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("status", "ok");
@@ -49,7 +50,7 @@ public class StatusHandler implements HttpHandler {
         body.put("remaining", tpmSnapshot.remaining());
         body.put("activeReservations", tpmSnapshot.activeReservations());
         body.put("dailyLimit", dailySnapshot.limit());
-        body.put("dailyUsage", dailySnapshot.windowUsage());
+        body.put("dailyUsage", dailySnapshot.usage()); // resets to 0 at local midnight, not a rolling window
         body.put("dailyRemaining", dailySnapshot.remaining());
         body.put("langdockBaseUrl", config.langdockBaseUrl());
         body.put("totalTokens", stats.totalTokens());
