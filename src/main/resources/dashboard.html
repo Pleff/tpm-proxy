@@ -18,6 +18,7 @@
   .stat { display: flex; justify-content: space-between; gap: 1rem; padding: .25rem 0; }
   .stat span:first-child { opacity: .7; flex-shrink: 0; }
   .stat span:last-child { text-align: right; word-break: break-word; }
+  .stat.sub { padding-left: 1.2rem; font-size: .85em; font-style: italic; opacity: .85; }
   .bar-track { background: #8882; border-radius: 4px; height: 10px; overflow: hidden; margin-top: .75rem; }
   .bar-fill { background: #2a7; height: 100%; width: 0; transition: width .3s; }
   .bar-fill.warn { background: #d90; }
@@ -55,8 +56,11 @@
       <div class="stat"><span>Auslastung</span><span id="dailyUsage">-</span></div>
       <div class="stat"><span>Verbleibend</span><span id="dailyRemaining">-</span></div>
       <div class="bar-track"><div class="bar-fill" id="dailyBar"></div></div>
-      <div class="stat"><span>Tokens (in/out, kumuliert)</span><span id="dailyTokens">-</span></div>
-      <div class="stat"><span>Input-Aufschlüsselung (fresh/cacheCreate/cacheRead)</span><span id="dailyCacheBreakdown">-</span></div>
+      <div class="stat"><span>Input (kumuliert)</span><span id="dailyInput">-</span></div>
+      <div class="stat sub"><span>davon fresh</span><span id="dailyFresh">-</span></div>
+      <div class="stat sub"><span>davon cacheCreate</span><span id="dailyCacheCreate">-</span></div>
+      <div class="stat sub"><span>davon cacheRead</span><span id="dailyCacheRead">-</span></div>
+      <div class="stat"><span>Output (kumuliert)</span><span id="dailyOutput">-</span></div>
     </div>
 
     <div class="card full">
@@ -103,8 +107,12 @@
       <div class="stat"><span>Client</span><span id="lastClient">-</span></div>
       <div class="stat"><span>Modell</span><span id="lastModel">-</span></div>
       <div class="stat"><span>Streaming</span><span id="lastStreaming">-</span></div>
-      <div class="stat"><span>Tokens (in/out)</span><span id="lastTokens">-</span></div>
-      <div class="stat"><span>Input-Aufschlüsselung (fresh/cacheCreate/cacheRead)</span><span id="lastCacheBreakdown">-</span></div>
+      <div class="stat"><span>Tokens gesamt</span><span id="lastTotalTokens">-</span></div>
+      <div class="stat"><span>Input</span><span id="lastInput">-</span></div>
+      <div class="stat sub"><span>davon fresh</span><span id="lastFresh">-</span></div>
+      <div class="stat sub"><span>davon cacheCreate</span><span id="lastCacheCreate">-</span></div>
+      <div class="stat sub"><span>davon cacheRead</span><span id="lastCacheRead">-</span></div>
+      <div class="stat"><span>Output</span><span id="lastOutput">-</span></div>
       <div class="stat"><span>Dauer</span><span id="lastDuration">-</span></div>
     </div>
   </div>
@@ -178,10 +186,11 @@ async function refresh() {
     document.getElementById('dailyLimit').textContent = s.dailyLimit;
     document.getElementById('dailyUsage').textContent = s.dailyUsage;
     document.getElementById('dailyRemaining').textContent = s.dailyRemaining;
-    document.getElementById('dailyTokens').textContent =
-      `${s.dailyInputTokens} / ${s.dailyOutputTokens}`;
-    document.getElementById('dailyCacheBreakdown').textContent =
-      `${s.dailyFreshInputTokens} / ${s.dailyCacheCreationTokens} / ${s.dailyCacheReadTokens}`;
+    document.getElementById('dailyInput').textContent = s.dailyInputTokens;
+    document.getElementById('dailyFresh').textContent = s.dailyFreshInputTokens;
+    document.getElementById('dailyCacheCreate').textContent = s.dailyCacheCreationTokens;
+    document.getElementById('dailyCacheRead').textContent = s.dailyCacheReadTokens;
+    document.getElementById('dailyOutput').textContent = s.dailyOutputTokens;
 
     document.getElementById('totalTokens').textContent = s.totalTokens;
     document.getElementById('totalRequests').textContent = s.totalRequests;
@@ -204,12 +213,12 @@ async function refresh() {
     document.getElementById('lastClient').textContent = last ? last.client : '-';
     document.getElementById('lastModel').textContent = last ? last.model : '-';
     document.getElementById('lastStreaming').textContent = last ? (last.streaming ? 'ja' : 'nein') : '-';
-    document.getElementById('lastTokens').textContent = last
-      ? `${last.totalTokens} (in=${last.inputTokens} out=${last.outputTokens})`
-      : '-';
-    document.getElementById('lastCacheBreakdown').textContent = last
-      ? `${last.freshInputTokens} / ${last.cacheCreationTokens} / ${last.cacheReadTokens}`
-      : '-';
+    document.getElementById('lastTotalTokens').textContent = last ? last.totalTokens : '-';
+    document.getElementById('lastInput').textContent = last ? last.inputTokens : '-';
+    document.getElementById('lastFresh').textContent = last ? last.freshInputTokens : '-';
+    document.getElementById('lastCacheCreate').textContent = last ? last.cacheCreationTokens : '-';
+    document.getElementById('lastCacheRead').textContent = last ? last.cacheReadTokens : '-';
+    document.getElementById('lastOutput').textContent = last ? last.outputTokens : '-';
     document.getElementById('lastDuration').textContent = last ? `${last.durationMillis} ms` : '-';
 
     const tpmInput = document.getElementById('newTpmLimit');
