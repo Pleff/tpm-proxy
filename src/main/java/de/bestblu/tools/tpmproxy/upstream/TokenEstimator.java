@@ -49,19 +49,15 @@ public final class TokenEstimator {
     }
 
     /**
-     * Diagnostic: structural counts (how many content sources were seen,
-     * where the cache breakpoint sits, how many characters were counted
-     * before/after it) plus a short preview of the "fresh" (post-breakpoint)
-     * content that's actually driving the estimate - lets a human eyeball
-     * whether that content genuinely looks like new conversation or is
-     * mistakenly still part of what should have been excluded as cached.
+     * Diagnostic: structural counts only (how many content sources were
+     * seen, where the cache breakpoint sits, how many characters were
+     * counted before/after it) - deliberately no message/prompt content, to
+     * avoid capturing private conversation content in logs.
      */
     public String diagnostics(JsonNode requestBody) {
         Analysis a = analyze(requestBody);
-        String flattened = a.includedText().replace("\r\n", " ").replace('\n', ' ').replace('\r', ' ');
-        String preview = flattened.length() > 200 ? flattened.substring(0, 200) + "..." : flattened;
-        return "sources=%d cachedThrough=%d includedChars=%d excludedChars=%d includedPreview=\"%s\"".formatted(
-                a.totalSources(), a.lastCachedIndex(), a.includedChars(), a.totalChars() - a.includedChars(), preview);
+        return "sources=%d cachedThrough=%d includedChars=%d excludedChars=%d".formatted(
+                a.totalSources(), a.lastCachedIndex(), a.includedChars(), a.totalChars() - a.includedChars());
     }
 
     private Analysis analyze(JsonNode requestBody) {
@@ -86,12 +82,12 @@ public final class TokenEstimator {
             }
         }
 
-        StringBuilder includedText = new StringBuilder();
+        int includedChars = 0;
         for (int i = lastCachedIndex + 1; i < sources.size(); i++) {
-            includedText.append(sources.get(i).text());
+            includedChars += sources.get(i).text().length();
         }
 
-        return new Analysis(sources.size(), lastCachedIndex, includedText.length(), totalChars, messageCount, includedText.toString());
+        return new Analysis(sources.size(), lastCachedIndex, includedChars, totalChars, messageCount);
     }
 
     private void collectSources(JsonNode node, List<TextSource> out) {
@@ -110,7 +106,6 @@ public final class TokenEstimator {
     private record TextSource(String text, boolean cached) {
     }
 
-    private record Analysis(
-            int totalSources, int lastCachedIndex, int includedChars, int totalChars, int messageCount, String includedText) {
+    private record Analysis(int totalSources, int lastCachedIndex, int includedChars, int totalChars, int messageCount) {
     }
 }

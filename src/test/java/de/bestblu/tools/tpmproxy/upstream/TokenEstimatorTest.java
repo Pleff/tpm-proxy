@@ -145,7 +145,7 @@ class TokenEstimatorTest {
     }
 
     @Test
-    void diagnosticsReportsTheCacheBreakpointAndAPreviewOfWhatsCountedAsFresh() throws Exception {
+    void diagnosticsReportsStructuralCountsAroundTheCacheBreakpoint() throws Exception {
         JsonNode body = mapper.readTree("""
                 { "system": [
                     { "type": "text", "text": "cached system prompt", "cache_control": { "type": "ephemeral" } }
@@ -155,19 +155,25 @@ class TokenEstimatorTest {
 
         String diagnostics = estimator.diagnostics(body);
 
+        assertTrue(diagnostics.contains("sources=2"), diagnostics);
         assertTrue(diagnostics.contains("cachedThrough=0"), diagnostics);
         assertTrue(diagnostics.contains("includedChars=14"), diagnostics); // "fresh new turn".length()
-        assertTrue(diagnostics.contains("includedPreview=\"fresh new turn\""), diagnostics);
+        assertTrue(diagnostics.contains("excludedChars=20"), diagnostics); // "cached system prompt".length()
     }
 
     @Test
-    void diagnosticsFlattensNewlinesInThePreviewToKeepTheLogLineOnOneLine() throws Exception {
+    void diagnosticsNeverIncludesActualMessageOrPromptContent() throws Exception {
+        // Structural counts only - no preview/content field, so private conversation
+        // text can never end up in logs via this method.
         JsonNode body = mapper.readTree("""
-                { "messages": [ { "role": "user", "content": "line one\\nline two" } ] }
+                { "system": "a secret system prompt nobody should see in logs",
+                  "messages": [ { "role": "user", "content": "another private message" } ] }
                 """);
 
         String diagnostics = estimator.diagnostics(body);
 
-        assertTrue(diagnostics.contains("includedPreview=\"line one line two\""), diagnostics);
+        assertFalse(diagnostics.contains("secret"));
+        assertFalse(diagnostics.contains("private"));
+        assertFalse(diagnostics.contains("preview"));
     }
 }
