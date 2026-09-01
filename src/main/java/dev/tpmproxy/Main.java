@@ -31,8 +31,8 @@ public final class Main {
         }
 
         SlidingWindowLimiter limiter = new SlidingWindowLimiter(config.initialTpmLimit());
-        LangdockClient langdock = new LangdockClient(config.langdockBaseUrl(), config.langdockApiKey(), JSON);
-        TokenEstimator estimator = new TokenEstimator(langdock);
+        LangdockClient langdock = new LangdockClient(config.langdockBaseUrl(), config.langdockApiKey());
+        TokenEstimator estimator = new TokenEstimator();
 
         try {
             // SPEC.md Section 8: bind to loopback only, not exposed on the network.

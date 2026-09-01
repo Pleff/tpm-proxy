@@ -109,11 +109,11 @@ ANTHROPIC_AUTH_TOKEN=<PROXY_CLIENT_TOKEN, falls gesetzt>
 Vor dem Forward wird die Token-Zahl des eingehenden Requests
 geschätzt:
 
-- **Input-Tokens:** idealerweise via Langdocks
-  `count_tokens`-Endpunkt (sofern durchgereicht/unterstützt — **zu
-  verifizieren bei Implementierungsstart**, siehe offene Frage 10).
-  Falls nicht verfügbar: lokale Schätzung (Fallback, z.B.
-  Zeichen/4-Heuristik).
+- **Input-Tokens:** lokale Zeichen/4-Heuristik. Langdocks
+  `/anthropic/eu`-Endpunkt unterstützt `/v1/messages/count_tokens`
+  **nachweislich nicht** (getestet: `404 Not found`) — der
+  ursprünglich geplante Preflight-Call gegen Langdock entfällt daher
+  komplett, es gibt nur die Heuristik.
 - **Output-Tokens:** nicht vorab bekannt; v1 nutzt `max_tokens` aus
   dem Request-Body als konservative Obergrenze für die
   Preflight-Reservierung.
@@ -230,8 +230,5 @@ werden können.
   Endpunkt `"stream": true` unterstützt und SSE-Events im gleichen
   Format wie die native Anthropic API liefert. Falls nicht, greift
   der in Abschnitt 6 beschriebene Degradations-Pfad.
-- **`count_tokens` bei Langdock:** Unklar, ob
-  `/v1/messages/count_tokens` unterstützt wird. Muss verifiziert
-  werden; sonst greift der lokale Schätzungs-Fallback (5.1).
-- Welches/welche Modelle sollen primär genutzt werden (relevant für
-  `count_tokens`, das modellspezifisch ist)?
+- ~~`count_tokens` bei Langdock~~ — **geklärt:** nicht unterstützt
+  (`404` bei `/anthropic/eu`, live getestet). Siehe 5.1.

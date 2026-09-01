@@ -3,28 +3,14 @@ package dev.tpmproxy.upstream;
 import com.fasterxml.jackson.databind.JsonNode;
 
 /**
- * Preflight input-token estimation (SPEC.md Section 5.1): try Langdock's
- * count_tokens endpoint first, fall back to a rough chars/4 heuristic if
- * that call fails for any reason.
+ * Preflight input-token estimation (SPEC.md Section 5.1). Langdock's
+ * anthropic-compatible endpoint does not support /v1/messages/count_tokens
+ * (confirmed via live test - 404 Not found), so this is a plain chars/4
+ * heuristic, not a fallback for a primary call.
  */
 public final class TokenEstimator {
 
-    private final LangdockClient client;
-
-    public TokenEstimator(LangdockClient client) {
-        this.client = client;
-    }
-
     public int estimateInputTokens(JsonNode requestBody) {
-        try {
-            return client.countTokens(requestBody);
-        } catch (Exception e) {
-            System.err.println("tpm-proxy: count_tokens preflight failed, using heuristic fallback - " + e.getMessage());
-            return heuristicEstimate(requestBody);
-        }
-    }
-
-    private int heuristicEstimate(JsonNode requestBody) {
         StringBuilder text = new StringBuilder();
         appendText(requestBody.path("system"), text);
 
