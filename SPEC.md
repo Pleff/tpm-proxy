@@ -134,6 +134,16 @@ geschätzt:
   **nachweislich nicht** (getestet: `404 Not found`) — der
   ursprünglich geplante Preflight-Call gegen Langdock entfällt daher
   komplett, es gibt nur die Heuristik.
+  **Prompt-Caching-Ausnahme:** Content-Blöcke mit `cache_control`
+  sowie alles davor (Anthropics Prefix-Caching-Semantik: ein
+  `cache_control`-Marker cached den gesamten Präfix bis zu diesem
+  Block) werden **nicht** mitgezählt. Live beobachtet: ein gecachter
+  System-Prompt wurde mit ~18.200 geschätzten Tokens veranschlagt,
+  tatsächlich verbraucht wurden `input_tokens=2` — Faktor ~9000x
+  Überschätzung, die bei jedem Request erneut eine Reservierung
+  erzeugte, die für sich allein schon über `TPM_LIMIT` lag (Sonderfall
+  aus 5.2). Ohne diese Ausnahme wäre ein gecachter System-Prompt bei
+  jedem einzelnen Request effektiv unbenutzbar.
 - **Output-Tokens:** nicht vorab bekannt; v1 nutzt `max_tokens` aus
   dem Request-Body als konservative Obergrenze für die
   Preflight-Reservierung.

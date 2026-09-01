@@ -86,4 +86,48 @@ class TokenEstimatorTest {
 
         assertEquals(7, estimator.estimateInputTokens(body));
     }
+
+    @Test
+    void excludesACachedSystemPromptFromTheEstimate() throws Exception {
+        // The whole (huge, in practice) system block carries cache_control - excluded entirely.
+        // Only the fresh user message ("1234", 4 chars -> 1) plus 1 * 4 overhead = 5 counts.
+        JsonNode body = mapper.readTree("""
+                { "system": [
+                    { "type": "text", "text": "a very large cached system prompt goes here", "cache_control": { "type": "ephemeral" } }
+                  ],
+                  "messages": [ { "role": "user", "content": "1234" } ] }
+                """);
+
+        assertEquals(5, estimator.estimateInputTokens(body));
+    }
+
+    @Test
+    void countsFreshMessagesAfterTheLastCacheControlBreakpointNormally() throws Exception {
+        // First message is behind the cache_control breakpoint (excluded); the second,
+        // newer message comes after it and must still be counted at full price.
+        // "5678" (4 chars -> 1) + 2 messages * 4 overhead = 9
+        JsonNode body = mapper.readTree("""
+                { "messages": [
+                    { "role": "user", "content": [
+                        { "type": "text", "text": "1234", "cache_control": { "type": "ephemeral" } }
+                      ] },
+                    { "role": "assistant", "content": "5678" }
+                  ] }
+                """);
+
+        assertEquals(9, estimator.estimateInputTokens(body));
+    }
+
+    @Test
+    void fallsBackToCountingEverythingWhenNothingIsCached() throws Exception {
+        // No cache_control anywhere - behaves exactly like the plain heuristic.
+        // "12345678" (8 chars -> 2) + 1 message * 4 overhead = 6
+        JsonNode body = mapper.readTree("""
+                { "messages": [ { "role": "user", "content": [
+                    { "type": "text", "text": "12345678" }
+                  ] } ] }
+                """);
+
+        assertEquals(6, estimator.estimateInputTokens(body));
+    }
 }
