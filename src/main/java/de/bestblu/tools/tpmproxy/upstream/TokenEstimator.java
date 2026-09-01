@@ -50,6 +50,24 @@ public final class TokenEstimator {
         return Math.max(1, text.length() / 4 + messageOverhead);
     }
 
+    /**
+     * Diagnostic only: whether any content block in the request carries
+     * {@code cache_control} - lets callers log this alongside the estimate to
+     * tell apart "client didn't request caching" from "estimator missed it"
+     * when a reservation looks too large despite low actual usage.
+     */
+    public boolean hasCacheControl(JsonNode requestBody) {
+        List<TextSource> sources = new ArrayList<>();
+        collectSources(requestBody.path("system"), sources);
+        JsonNode messages = requestBody.path("messages");
+        if (messages.isArray()) {
+            for (JsonNode message : messages) {
+                collectSources(message.path("content"), sources);
+            }
+        }
+        return sources.stream().anyMatch(TextSource::cached);
+    }
+
     private void collectSources(JsonNode node, List<TextSource> out) {
         if (node.isTextual()) {
             // A plain string can't carry cache_control (that requires the block-array form).

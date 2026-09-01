@@ -5,6 +5,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class TokenEstimatorTest {
 
@@ -129,5 +131,28 @@ class TokenEstimatorTest {
                 """);
 
         assertEquals(6, estimator.estimateInputTokens(body));
+    }
+
+    @Test
+    void hasCacheControlIsTrueWhenAnyBlockCarriesIt() throws Exception {
+        JsonNode body = mapper.readTree("""
+                { "system": [
+                    { "type": "text", "text": "cached prompt", "cache_control": { "type": "ephemeral" } }
+                  ] }
+                """);
+
+        assertTrue(estimator.hasCacheControl(body));
+    }
+
+    @Test
+    void hasCacheControlIsFalseWhenNoBlockCarriesIt() throws Exception {
+        JsonNode body = mapper.readTree("""
+                { "system": "plain string prompt",
+                  "messages": [ { "role": "user", "content": [
+                      { "type": "text", "text": "no cache marker here" }
+                    ] } ] }
+                """);
+
+        assertFalse(estimator.hasCacheControl(body));
     }
 }
