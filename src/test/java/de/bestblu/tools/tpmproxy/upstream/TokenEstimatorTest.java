@@ -155,4 +155,31 @@ class TokenEstimatorTest {
 
         assertFalse(estimator.hasCacheControl(body));
     }
+
+    @Test
+    void diagnosticsReportsTheCacheBreakpointAndAPreviewOfWhatsCountedAsFresh() throws Exception {
+        JsonNode body = mapper.readTree("""
+                { "system": [
+                    { "type": "text", "text": "cached system prompt", "cache_control": { "type": "ephemeral" } }
+                  ],
+                  "messages": [ { "role": "user", "content": "fresh new turn" } ] }
+                """);
+
+        String diagnostics = estimator.diagnostics(body);
+
+        assertTrue(diagnostics.contains("cachedThrough=0"), diagnostics);
+        assertTrue(diagnostics.contains("includedChars=14"), diagnostics); // "fresh new turn".length()
+        assertTrue(diagnostics.contains("includedPreview=\"fresh new turn\""), diagnostics);
+    }
+
+    @Test
+    void diagnosticsFlattensNewlinesInThePreviewToKeepTheLogLineOnOneLine() throws Exception {
+        JsonNode body = mapper.readTree("""
+                { "messages": [ { "role": "user", "content": "line one\\nline two" } ] }
+                """);
+
+        String diagnostics = estimator.diagnostics(body);
+
+        assertTrue(diagnostics.contains("includedPreview=\"line one line two\""), diagnostics);
+    }
 }

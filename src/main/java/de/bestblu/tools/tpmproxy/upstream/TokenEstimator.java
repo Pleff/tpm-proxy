@@ -13,41 +13,19 @@ import java.util.List;
  *
  * <p>Anthropic prompt caching (a {@code cache_control} block) covers the
  * entire prefix up to and including the marked block - content there is
- * cheap to reuse once cached (observed in practice: ~18k estimated vs. 2
- * actual input_tokens for a cached system prompt). Since a preflight
- * estimate can't know whether a given cache entry is warm, content at or
- * before the last {@code cache_control} breakpoint is excluded rather than
- * counted at full (uncached-worst-case) price - counting it fully turns a
- * cheap, cached system prompt into a reservation that alone can exceed
- * TPM_LIMIT on every single request.
+ * cheap to reuse once cached. Since a preflight estimate can't know whether
+ * a given cache entry is warm, content at or before the last
+ * {@code cache_control} breakpoint is excluded rather than counted at full
+ * (uncached-worst-case) price. Content <em>after</em> the last breakpoint -
+ * e.g. conversation history added since the cache was last extended - is
+ * still genuinely fresh and counted normally.
  */
 public final class TokenEstimator {
 
     public int estimateInputTokens(JsonNode requestBody) {
-        List<TextSource> sources = new ArrayList<>();
-        collectSources(requestBody.path("system"), sources);
-
-        JsonNode messages = requestBody.path("messages");
-        if (messages.isArray()) {
-            for (JsonNode message : messages) {
-                collectSources(message.path("content"), sources);
-            }
-        }
-
-        int lastCachedIndex = -1;
-        for (int i = 0; i < sources.size(); i++) {
-            if (sources.get(i).cached()) {
-                lastCachedIndex = i;
-            }
-        }
-
-        StringBuilder text = new StringBuilder();
-        for (int i = lastCachedIndex + 1; i < sources.size(); i++) {
-            text.append(sources.get(i).text());
-        }
-
-        int messageOverhead = messages.isArray() ? messages.size() * 4 : 0;
-        return Math.max(1, text.length() / 4 + messageOverhead);
+        Analysis analysis = analyze(requestBody);
+        int messageOverhead = analysis.messageCount() * 4;
+        return Math.max(1, analysis.includedChars() / 4 + messageOverhead);
     }
 
     /**
@@ -57,15 +35,53 @@ public final class TokenEstimator {
      * when a reservation looks too large despite low actual usage.
      */
     public boolean hasCacheControl(JsonNode requestBody) {
+        return analyze(requestBody).lastCachedIndex() >= 0;
+    }
+
+    /**
+     * Diagnostic: structural counts (how many content sources were seen,
+     * where the cache breakpoint sits, how many characters were counted
+     * before/after it) plus a short preview of the "fresh" (post-breakpoint)
+     * content that's actually driving the estimate - lets a human eyeball
+     * whether that content genuinely looks like new conversation or is
+     * mistakenly still part of what should have been excluded as cached.
+     */
+    public String diagnostics(JsonNode requestBody) {
+        Analysis a = analyze(requestBody);
+        String flattened = a.includedText().replace("\r\n", " ").replace('\n', ' ').replace('\r', ' ');
+        String preview = flattened.length() > 200 ? flattened.substring(0, 200) + "..." : flattened;
+        return "sources=%d cachedThrough=%d includedChars=%d excludedChars=%d includedPreview=\"%s\"".formatted(
+                a.totalSources(), a.lastCachedIndex(), a.includedChars(), a.totalChars() - a.includedChars(), preview);
+    }
+
+    private Analysis analyze(JsonNode requestBody) {
         List<TextSource> sources = new ArrayList<>();
         collectSources(requestBody.path("system"), sources);
+
         JsonNode messages = requestBody.path("messages");
+        int messageCount = 0;
         if (messages.isArray()) {
+            messageCount = messages.size();
             for (JsonNode message : messages) {
                 collectSources(message.path("content"), sources);
             }
         }
-        return sources.stream().anyMatch(TextSource::cached);
+
+        int lastCachedIndex = -1;
+        int totalChars = 0;
+        for (int i = 0; i < sources.size(); i++) {
+            totalChars += sources.get(i).text().length();
+            if (sources.get(i).cached()) {
+                lastCachedIndex = i;
+            }
+        }
+
+        StringBuilder includedText = new StringBuilder();
+        for (int i = lastCachedIndex + 1; i < sources.size(); i++) {
+            includedText.append(sources.get(i).text());
+        }
+
+        return new Analysis(sources.size(), lastCachedIndex, includedText.length(), totalChars, messageCount, includedText.toString());
     }
 
     private void collectSources(JsonNode node, List<TextSource> out) {
@@ -82,5 +98,9 @@ public final class TokenEstimator {
     }
 
     private record TextSource(String text, boolean cached) {
+    }
+
+    private record Analysis(
+            int totalSources, int lastCachedIndex, int includedChars, int totalChars, int messageCount, String includedText) {
     }
 }

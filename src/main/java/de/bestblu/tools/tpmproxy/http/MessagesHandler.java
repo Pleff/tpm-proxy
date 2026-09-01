@@ -91,7 +91,6 @@ public class MessagesHandler implements HttpHandler {
         boolean streaming = requestJson.path("stream").asBoolean(false);
 
         int estimatedInputTokens = estimator.estimateInputTokens(requestJson);
-        boolean cacheControlFound = estimator.hasCacheControl(requestJson);
         int reservationTokens = estimatedInputTokens + maxTokens;
 
         Reservation tpmReservation;
@@ -100,7 +99,7 @@ public class MessagesHandler implements HttpHandler {
             if (reserved.isEmpty()) {
                 long retryAfterMillis = tpmLimiter.millisUntilAvailable(reservationTokens);
                 sendRateLimitError(exchange, "TPM", retryAfterMillis);
-                logRejected(model, streaming, "TPM", retryAfterMillis, estimatedInputTokens, maxTokens, cacheControlFound, startNanos);
+                logRejected(model, streaming, "TPM", retryAfterMillis, estimatedInputTokens, maxTokens, requestJson, startNanos);
                 return;
             }
             tpmReservation = reserved.get();
@@ -117,7 +116,7 @@ public class MessagesHandler implements HttpHandler {
             tpmLimiter.release(tpmReservation);
             long retryAfterMillis = dailyLimiter.millisUntilAvailable(reservationTokens);
             sendRateLimitError(exchange, "daily token", retryAfterMillis);
-            logRejected(model, streaming, "daily token", retryAfterMillis, estimatedInputTokens, maxTokens, cacheControlFound, startNanos);
+            logRejected(model, streaming, "daily token", retryAfterMillis, estimatedInputTokens, maxTokens, requestJson, startNanos);
             return;
         }
         Budget budget = new Budget(tpmReservation, dailyReserved.get());
@@ -297,11 +296,11 @@ public class MessagesHandler implements HttpHandler {
      * default from the client, not the token count the user has in mind.
      */
     private void logRejected(String model, boolean streaming, String scope, long retryAfterMillis,
-                              int estimatedInputTokens, int maxTokens, boolean cacheControlFound, long startNanos) {
+                              int estimatedInputTokens, int maxTokens, JsonNode requestJson, long startNanos) {
         Log.infof(
-                "model=%s stream=%b REJECTED (%s budget exhausted) reservation=%d (est.input=%d + max_tokens=%d, cache_control_found=%b) retryAfter=%dms duration=%dms",
+                "model=%s stream=%b REJECTED (%s budget exhausted) reservation=%d (est.input=%d + max_tokens=%d, %s) retryAfter=%dms duration=%dms",
                 model, streaming, scope, estimatedInputTokens + maxTokens, estimatedInputTokens, maxTokens,
-                cacheControlFound, retryAfterMillis, millisSince(startNanos));
+                estimator.diagnostics(requestJson), retryAfterMillis, millisSince(startNanos));
     }
 
     /**
