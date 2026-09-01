@@ -19,7 +19,7 @@ import java.util.Set;
 public final class LangdockClient {
 
     private static final Set<String> SKIP_REQUEST_HEADERS = Set.of(
-            "host", "content-length", "connection", "authorization",
+            "host", "content-length", "content-type", "connection", "authorization",
             "x-api-key", "transfer-encoding", "upgrade", "expect");
 
     private final HttpClient httpClient;
