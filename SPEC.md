@@ -214,22 +214,45 @@ einem Schritt auf 0 zurück (eigene Implementierung
 Semantik ist zu unterschiedlich für eine gemeinsame Abstraktion).
 Zeitzone: lokale JVM-Zeitzone des Proxy-Prozesses.
 
+**Nur tatsächlicher Verbrauch wird gezählt — die Anzeige läuft nur
+hoch.** Anders als beim TPM-Limiter (5.1) wird die
+Preflight-Schätzung (`input_tokens` + `max_tokens`) beim Tagesbudget
+**nicht** in den sichtbaren Zähler eingebucht. Sie dient ausschließlich
+als Zulassungsprüfung ("passt dieser Request grundsätzlich noch ins
+verbleibende Tagesbudget?"). Erst nach Abschluss des Requests wird der
+**tatsächliche** Token-Verbrauch addiert. Grund: Bei TPM ist das
+Reservieren-dann-Runterkorrigieren gewollt (die Anzeige soll die
+aktuelle Rate zeigen, kurzfristige Schwankungen sind erwartet); beim
+Tagesbudget wirkt genau dieses Muster wie ein Darstellungsfehler,
+da man einen Tageszähler intuitiv als reinen Verbrauchs-Kilometerzähler
+liest, der nur bei Mitternacht zurückspringt.
+
 Jeder Request muss **beide** Budgets passieren:
 
 1. TPM-Reservierung wie in 5.1/5.3 (inkl. Warten bis
    `QUEUE_TIMEOUT_MS`).
-2. Erst danach eine **nicht-blockierende** Tages-Reservierung. Ist
+2. Erst danach eine **nicht-blockierende** Tages-Zulassungsprüfung
+   (`aktueller Tagesverbrauch + geschätzte Tokens ≤ Tageslimit?`). Ist
    das Tages-Budget erschöpft, wird die bereits gemachte
    TPM-Reservierung wieder freigegeben und der Request sofort mit
    `429` abgelehnt (`rate_limit_error`, Meldungstext nennt "daily
    token" statt "TPM") — Warten ergibt hier keinen Sinn, da nur
    Mitternacht das Budget zurücksetzt, nicht das Verstreichen
    einzelner Sekunden.
-3. Korrektur nach Abschluss (5.1) wird auf **beide** Reservierungen
-   angewendet. Läuft eine Korrektur nach Mitternacht für eine
-   Reservierung vom Vortag ein, wird sie verworfen (der Vortag ist
+3. Nach Abschluss wird beim TPM-Limiter die Reservierung auf den
+   Ist-Wert korrigiert (5.1); beim Tagesbudget wird der Ist-Wert
+   stattdessen zum bestehenden Zähler **addiert** (kein Delta, kein
+   Zurückrechnen). Läuft eine solche Korrektur nach Mitternacht für
+   eine Zulassung vom Vortag ein, wird sie verworfen (der Vortag ist
    bereits auf 0 zurückgesetzt) statt fälschlich in den neuen Tag
    durchzuschlagen.
+
+**Kompromiss:** Da die Zulassungsprüfung den geschätzten Verbrauch
+nicht vormerkt, können mehrere parallele Requests knapp vor Erreichen
+des Tageslimits das Budget theoretisch geringfügig überschreiten,
+bevor ihre echten Verbrauchswerte eintreffen. Für ein grobes
+Tages-Backstop (Default 1.000.000 Tokens) ist das akzeptabel — Präzision
+auf Request-Ebene übernimmt ohnehin der TPM-Limiter.
 
 ## 6. Request/Response-Handling
 

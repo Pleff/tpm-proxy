@@ -13,6 +13,13 @@ import java.util.concurrent.locks.ReentrantLock;
  * local midnight and the next local midnight, not a rolling 24h window.
  * On a day change the running total resets to zero in one step, instead of
  * individual reservations aging out one at a time like the TPM limiter.
+ *
+ * Unlike the TPM limiter, this only ever counts <em>actual</em> usage - a
+ * request's worst-case ({@code max_tokens}) estimate gates admission in
+ * {@link #tryReserve} but is never added to the running total, so the
+ * visible total is monotonically increasing (until the daily reset)
+ * instead of spiking up on reservation and dropping back down once the
+ * real usage is known.
  */
 public final class DailyTokenLimiter {
 
@@ -42,38 +49,42 @@ public final class DailyTokenLimiter {
         this.limit = newLimit;
     }
 
-    /** Reserves {@code tokens} immediately if today's budget allows it. */
-    public Optional<Reservation> tryReserve(int tokens) {
+    /**
+     * Admits the request if today's committed usage plus this worst-case
+     * estimate still fits the budget. Nothing is added to the running total
+     * here - only {@link #correct} commits real usage.
+     */
+    public Optional<Reservation> tryReserve(int worstCaseTokens) {
         lock.lock();
         try {
             rolloverIfNewDay();
-            if (currentUsage + tokens > limit) {
+            if (currentUsage + worstCaseTokens > limit) {
                 return Optional.empty();
             }
-            Reservation reservation = new Reservation(currentDay, tokens);
-            currentUsage += tokens;
-            return Optional.of(reservation);
+            return Optional.of(new Reservation(currentDay));
         } finally {
             lock.unlock();
         }
     }
 
-    /** Replaces a reservation's provisional token count with the actual usage. */
+    /**
+     * Commits the actual usage to today's running total. A no-op if the
+     * reservation's day has already rolled over - that day already reset
+     * to zero on its own, so a late correction must not leak into today.
+     */
     public void correct(Reservation reservation, int actualTokens) {
         lock.lock();
         try {
             rolloverIfNewDay();
             if (reservation.day.equals(currentDay)) {
-                currentUsage += (long) actualTokens - reservation.tokens;
-                reservation.tokens = actualTokens;
+                currentUsage += actualTokens;
             }
-            // Otherwise the reservation's day already rolled over - it reset to zero on its own.
         } finally {
             lock.unlock();
         }
     }
 
-    /** Drops a reservation's cost entirely, e.g. when the upstream call failed before producing usage. */
+    /** Records no usage for a reservation that never completed (e.g. the upstream call failed). */
     public void release(Reservation reservation) {
         correct(reservation, 0);
     }
@@ -114,15 +125,9 @@ public final class DailyTokenLimiter {
 
     public static final class Reservation {
         private final LocalDate day;
-        private volatile int tokens;
 
-        private Reservation(LocalDate day, int tokens) {
+        private Reservation(LocalDate day) {
             this.day = day;
-            this.tokens = tokens;
-        }
-
-        public int tokens() {
-            return tokens;
         }
     }
 
