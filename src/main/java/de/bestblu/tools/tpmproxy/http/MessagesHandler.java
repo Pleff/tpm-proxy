@@ -160,7 +160,7 @@ public class MessagesHandler implements HttpHandler {
                 cacheReadTokens = usage.path("cache_read_input_tokens").asInt(0);
                 inputTokens = freshInputTokens + cacheCreationTokens + cacheReadTokens;
                 outputTokens = usage.path("output_tokens").asInt(0);
-                correctBudget(budget, inputTokens + outputTokens);
+                correctBudget(budget, inputTokens, outputTokens, freshInputTokens, cacheCreationTokens, cacheReadTokens);
             } else {
                 releaseBudget(budget);
             }
@@ -223,14 +223,14 @@ public class MessagesHandler implements HttpHandler {
             int foldedInput = usage[0] + usage[2] + usage[3];
             int actual = foldedInput + usage[1];
             if (actual > 0) {
-                correctBudget(budget, actual);
+                correctBudget(budget, foldedInput, usage[1], usage[0], usage[2], usage[3]);
             } else {
-                // Stream ended without ever reporting usage (e.g. aborted mid-flight) - keep the
-                // TPM reservation as-is rather than releasing it (SPEC.md Section 5.1: no negative
-                // rebooking). KNOWN BUG (SPEC.md Section 5.5, flagged separately): correctBudget()
-                // applies this same still-provisional amount to the daily limiter too, which commits
-                // it as if it were real usage instead of releasing it to 0.
-                correctBudget(budget, budget.tpm().tokens());
+                // Stream ended without ever reporting usage (e.g. aborted mid-flight). TPM keeps
+                // the reservation as-is rather than releasing it (SPEC.md Section 5.1: no negative
+                // rebooking) - but the daily limiter only ever counts actual usage (Section 5.5),
+                // so it gets released instead of committing this still-provisional worst-case guess.
+                tpmLimiter.correct(budget.tpm(), budget.tpm().tokens());
+                dailyLimiter.release(budget.daily());
             }
             logCompleted(exchange, model, true, foldedInput, usage[1], usage[0], usage[2], usage[3], startNanos);
         }
@@ -264,9 +264,10 @@ public class MessagesHandler implements HttpHandler {
         });
     }
 
-    private void correctBudget(Budget budget, int actualTokens) {
-        tpmLimiter.correct(budget.tpm(), actualTokens);
-        dailyLimiter.correct(budget.daily(), actualTokens);
+    private void correctBudget(Budget budget, int inputTokens, int outputTokens,
+                                int freshInputTokens, int cacheCreationTokens, int cacheReadTokens) {
+        tpmLimiter.correct(budget.tpm(), inputTokens + outputTokens);
+        dailyLimiter.correct(budget.daily(), inputTokens, outputTokens, freshInputTokens, cacheCreationTokens, cacheReadTokens);
     }
 
     private void releaseBudget(Budget budget) {

@@ -30,6 +30,14 @@ public final class DailyTokenLimiter {
     private LocalDate currentDay;
     private long currentUsage = 0;
 
+    // Cumulative breakdown for today, reset alongside currentUsage at midnight. currentUsage
+    // alone (input+output) still gates admission; these are for display/cost visibility only.
+    private long cumulativeInputTokens = 0;
+    private long cumulativeOutputTokens = 0;
+    private long cumulativeFreshInputTokens = 0;
+    private long cumulativeCacheCreationTokens = 0;
+    private long cumulativeCacheReadTokens = 0;
+
     public DailyTokenLimiter(int initialLimit) {
         this(initialLimit, Clock.systemDefaultZone());
     }
@@ -75,16 +83,28 @@ public final class DailyTokenLimiter {
     }
 
     /**
-     * Commits the actual usage to today's running total. A no-op if the
-     * reservation's day has already rolled over - that day already reset
-     * to zero on its own, so a late correction must not leak into today.
+     * Commits the actual usage to today's running total and cost-relevant
+     * breakdown. A no-op if the reservation's day has already rolled over -
+     * that day already reset to zero on its own, so a late correction must
+     * not leak into today.
+     *
+     * @param freshInputTokens usage.input_tokens, cacheCreationTokens/cacheReadTokens the
+     *                         corresponding cache fields - kept apart from inputTokens (their
+     *                         sum, used for the budget itself) since the three have very
+     *                         different $/token prices (SPEC.md Section 7).
      */
-    public void correct(Reservation reservation, int actualTokens) {
+    public void correct(Reservation reservation, int inputTokens, int outputTokens,
+                         int freshInputTokens, int cacheCreationTokens, int cacheReadTokens) {
         lock.lock();
         try {
             rolloverIfNewDay();
             if (reservation.day.equals(currentDay)) {
-                currentUsage += actualTokens;
+                currentUsage += (long) inputTokens + outputTokens;
+                cumulativeInputTokens += inputTokens;
+                cumulativeOutputTokens += outputTokens;
+                cumulativeFreshInputTokens += freshInputTokens;
+                cumulativeCacheCreationTokens += cacheCreationTokens;
+                cumulativeCacheReadTokens += cacheReadTokens;
             }
         } finally {
             lock.unlock();
@@ -93,7 +113,7 @@ public final class DailyTokenLimiter {
 
     /** Records no usage for a reservation that never completed (e.g. the upstream call failed). */
     public void release(Reservation reservation) {
-        correct(reservation, 0);
+        correct(reservation, 0, 0, 0, 0, 0);
     }
 
     /** Milliseconds until local midnight, when the daily budget resets - or 0 if available now. */
@@ -116,7 +136,9 @@ public final class DailyTokenLimiter {
         lock.lock();
         try {
             rolloverIfNewDay();
-            return new Snapshot(limit, currentUsage, Math.max(0, limit - currentUsage), currentDay);
+            return new Snapshot(limit, currentUsage, Math.max(0, limit - currentUsage), currentDay,
+                    cumulativeInputTokens, cumulativeOutputTokens,
+                    cumulativeFreshInputTokens, cumulativeCacheCreationTokens, cumulativeCacheReadTokens);
         } finally {
             lock.unlock();
         }
@@ -127,6 +149,11 @@ public final class DailyTokenLimiter {
         if (!today.equals(currentDay)) {
             currentDay = today;
             currentUsage = 0;
+            cumulativeInputTokens = 0;
+            cumulativeOutputTokens = 0;
+            cumulativeFreshInputTokens = 0;
+            cumulativeCacheCreationTokens = 0;
+            cumulativeCacheReadTokens = 0;
         }
     }
 
@@ -138,6 +165,9 @@ public final class DailyTokenLimiter {
         }
     }
 
-    public record Snapshot(int limit, long usage, long remaining, LocalDate day) {
+    public record Snapshot(
+            int limit, long usage, long remaining, LocalDate day,
+            long inputTokens, long outputTokens,
+            long freshInputTokens, long cacheCreationTokens, long cacheReadTokens) {
     }
 }

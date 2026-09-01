@@ -35,7 +35,7 @@ class DailyTokenLimiterTest {
         DailyTokenLimiter limiter = new DailyTokenLimiter(1000, new MutableClock());
 
         Reservation reservation = limiter.tryReserve(200).orElseThrow();
-        limiter.correct(reservation, 200); // something already committed today
+        limiter.correct(reservation, 200, 0, 200, 0, 0); // something already committed today
 
         assertFalse(limiter.tryReserve(5000).isPresent(),
                 "an oversized request must not jump the queue once other usage is already committed");
@@ -46,12 +46,51 @@ class DailyTokenLimiterTest {
         DailyTokenLimiter limiter = new DailyTokenLimiter(1000, new MutableClock());
 
         Reservation first = limiter.tryReserve(800).orElseThrow(); // worst-case max_tokens estimate
-        limiter.correct(first, 50); // actual usage turned out much lower than the reservation
+        limiter.correct(first, 50, 0, 50, 0, 0); // actual usage turned out much lower than the reservation
         assertEquals(50, limiter.snapshot().usage());
 
         Reservation second = limiter.tryReserve(700).orElseThrow();
-        limiter.correct(second, 30);
+        limiter.correct(second, 30, 0, 30, 0, 0);
         assertEquals(80, limiter.snapshot().usage(), "usage must accumulate real usage only, never decrease");
+    }
+
+    @Test
+    void snapshotAccumulatesTheCostRelevantBreakdownAcrossRequests() {
+        DailyTokenLimiter limiter = new DailyTokenLimiter(10_000, new MutableClock());
+
+        Reservation first = limiter.tryReserve(500).orElseThrow();
+        limiter.correct(first, 100, 20, 60, 15, 25); // input=100 (fresh=60, cacheCreate=15, cacheRead=25), output=20
+
+        Reservation second = limiter.tryReserve(500).orElseThrow();
+        limiter.correct(second, 40, 10, 10, 0, 30); // input=40 (fresh=10, cacheCreate=0, cacheRead=30), output=10
+
+        DailyTokenLimiter.Snapshot snapshot = limiter.snapshot();
+        assertEquals(140, snapshot.inputTokens(), "100 + 40");
+        assertEquals(30, snapshot.outputTokens(), "20 + 10");
+        assertEquals(70, snapshot.freshInputTokens(), "60 + 10");
+        assertEquals(15, snapshot.cacheCreationTokens(), "15 + 0");
+        assertEquals(55, snapshot.cacheReadTokens(), "25 + 30");
+        assertEquals(170, snapshot.usage(), "140 input + 30 output");
+    }
+
+    @Test
+    void breakdownResetsToZeroAtLocalMidnightAlongsideUsage() {
+        MutableClock clock = new MutableClock(Instant.parse("2026-03-04T22:59:00Z")); // 23:59 CET
+        DailyTokenLimiter limiter = new DailyTokenLimiter(10_000, clock);
+
+        Reservation reservation = limiter.tryReserve(500).orElseThrow();
+        limiter.correct(reservation, 100, 20, 60, 15, 25);
+        assertEquals(120, limiter.snapshot().usage(), "100 input + 20 output");
+
+        clock.set(Instant.parse("2026-03-04T23:05:00Z")); // 00:05 CET next day
+
+        DailyTokenLimiter.Snapshot snapshot = limiter.snapshot();
+        assertEquals(0, snapshot.usage());
+        assertEquals(0, snapshot.inputTokens());
+        assertEquals(0, snapshot.outputTokens());
+        assertEquals(0, snapshot.freshInputTokens());
+        assertEquals(0, snapshot.cacheCreationTokens());
+        assertEquals(0, snapshot.cacheReadTokens());
     }
 
     @Test
@@ -59,7 +98,7 @@ class DailyTokenLimiterTest {
         DailyTokenLimiter limiter = new DailyTokenLimiter(1000, new MutableClock());
 
         Reservation reservation = limiter.tryReserve(900).orElseThrow();
-        limiter.correct(reservation, 900); // commit the full worst case as real usage
+        limiter.correct(reservation, 900, 0, 900, 0, 0); // commit the full worst case as real usage
 
         assertFalse(limiter.tryReserve(200).isPresent(), "900 committed + 200 estimate would exceed 1000");
         assertTrue(limiter.tryReserve(100).isPresent());
@@ -83,7 +122,7 @@ class DailyTokenLimiterTest {
         DailyTokenLimiter limiter = new DailyTokenLimiter(1000, clock);
 
         Reservation reservation = limiter.tryReserve(1000).orElseThrow();
-        limiter.correct(reservation, 1000);
+        limiter.correct(reservation, 1000, 0, 1000, 0, 0);
 
         assertFalse(limiter.tryReserve(1).isPresent(), "still the same calendar day, budget should stay exhausted");
     }
@@ -94,7 +133,7 @@ class DailyTokenLimiterTest {
         DailyTokenLimiter limiter = new DailyTokenLimiter(1000, clock);
 
         Reservation reservation = limiter.tryReserve(1000).orElseThrow();
-        limiter.correct(reservation, 1000);
+        limiter.correct(reservation, 1000, 0, 1000, 0, 0);
         assertFalse(limiter.tryReserve(1).isPresent());
 
         clock.set(Instant.parse("2026-03-04T23:30:00Z")); // 00:30 CET the next day - past local midnight
@@ -110,9 +149,9 @@ class DailyTokenLimiterTest {
 
         clock.set(Instant.parse("2026-03-04T23:05:00Z")); // 00:05 CET next day
         Reservation today = limiter.tryReserve(200).orElseThrow();
-        limiter.correct(today, 200);
+        limiter.correct(today, 200, 0, 200, 0, 0);
 
-        limiter.correct(yesterday, 999); // late correction for a reservation from the previous day
+        limiter.correct(yesterday, 999, 0, 999, 0, 0); // late correction for a reservation from the previous day
         assertEquals(200, limiter.snapshot().usage(), "yesterday's reservation must not affect today's total");
     }
 
@@ -129,7 +168,7 @@ class DailyTokenLimiterTest {
         DailyTokenLimiter limiter = new DailyTokenLimiter(1000, clock);
 
         Reservation reservation = limiter.tryReserve(1000).orElseThrow();
-        limiter.correct(reservation, 1000);
+        limiter.correct(reservation, 1000, 0, 1000, 0, 0);
 
         long wait = limiter.millisUntilAvailable(1);
 

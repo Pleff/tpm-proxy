@@ -55,6 +55,8 @@
       <div class="stat"><span>Auslastung</span><span id="dailyUsage">-</span></div>
       <div class="stat"><span>Verbleibend</span><span id="dailyRemaining">-</span></div>
       <div class="bar-track"><div class="bar-fill" id="dailyBar"></div></div>
+      <div class="stat"><span>Tokens (in/out, kumuliert)</span><span id="dailyTokens">-</span></div>
+      <div class="stat"><span>Input-Aufschlüsselung (fresh/cacheCreate/cacheRead)</span><span id="dailyCacheBreakdown">-</span></div>
     </div>
 
     <div class="card full">
@@ -176,6 +178,10 @@ async function refresh() {
     document.getElementById('dailyLimit').textContent = s.dailyLimit;
     document.getElementById('dailyUsage').textContent = s.dailyUsage;
     document.getElementById('dailyRemaining').textContent = s.dailyRemaining;
+    document.getElementById('dailyTokens').textContent =
+      `${s.dailyInputTokens} / ${s.dailyOutputTokens}`;
+    document.getElementById('dailyCacheBreakdown').textContent =
+      `${s.dailyFreshInputTokens} / ${s.dailyCacheCreationTokens} / ${s.dailyCacheReadTokens}`;
 
     document.getElementById('totalTokens').textContent = s.totalTokens;
     document.getElementById('totalRequests').textContent = s.totalRequests;

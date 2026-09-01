@@ -193,7 +193,7 @@ class MessagesHandlerTest {
         // Same reasoning as above for the daily counter: 5 tokens already committed today means
         // currentUsage != 0, so the oversized-request exception does not admit this ~55-token request.
         startProxy(configWithToken(null), 100_000, 10);
-        dailyLimiter.tryReserve(1).ifPresent(r -> dailyLimiter.correct(r, 5));
+        dailyLimiter.tryReserve(1).ifPresent(r -> dailyLimiter.correct(r, 5, 0, 5, 0, 0));
         upstreamHandler.set(okJsonResponder(7, 3));
 
         HttpResponse<String> response = send("POST", validBody(), null);

@@ -388,7 +388,13 @@ Dies ist ein bekannter Bug, kein beabsichtigtes Verhalten.
   $/Token-Preise (Cache-Read i.d.R. stark rabattiert, Cache-Creation
   eher teurer als frischer Input). Der Proxy schätzt bewusst **keine**
   $-Beträge (Langdocks tatsächliche Konditionen sind nicht bekannt),
-  liefert nur die rohen Token-Zahlen zur eigenen Einordnung.
+  liefert nur die rohen Token-Zahlen zur eigenen Einordnung. Dieselbe
+  Aufschlüsselung (`dailyInputTokens`, `dailyOutputTokens`,
+  `dailyFreshInputTokens`, `dailyCacheCreationTokens`,
+  `dailyCacheReadTokens`) liefert der Endpunkt zusätzlich kumuliert
+  über alle Requests seit lokaler Mitternacht (nicht nur für den
+  letzten Request) — resettet zusammen mit `dailyUsage` beim
+  Tageswechsel (Abschnitt 5.5).
 - `GET /`: Web-Dashboard (statisches HTML, pollt `/internal/status`
   alle 2s) — zeigt dieselben Werte visuell inkl. Fortschrittsbalken
   für TPM- und Tagesbudget, ein Zeitreihen-Diagramm (Inline-SVG, kein

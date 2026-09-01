@@ -52,6 +52,12 @@ public class StatusHandler implements HttpHandler {
         body.put("dailyLimit", dailySnapshot.limit());
         body.put("dailyUsage", dailySnapshot.usage()); // resets to 0 at local midnight, not a rolling window
         body.put("dailyRemaining", dailySnapshot.remaining());
+        body.put("dailyInputTokens", dailySnapshot.inputTokens());
+        body.put("dailyOutputTokens", dailySnapshot.outputTokens());
+        // Same cost-relevant breakdown as lastRequest above, but cumulated since local midnight.
+        body.put("dailyFreshInputTokens", dailySnapshot.freshInputTokens());
+        body.put("dailyCacheCreationTokens", dailySnapshot.cacheCreationTokens());
+        body.put("dailyCacheReadTokens", dailySnapshot.cacheReadTokens());
         body.put("langdockBaseUrl", config.langdockBaseUrl());
         body.put("totalTokens", stats.totalTokens());
         body.put("totalRequests", stats.totalRequests());

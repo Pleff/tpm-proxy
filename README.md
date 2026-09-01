@@ -92,7 +92,10 @@ Zeigt live (Refresh alle 2s):
   TPM-Fenster gealtert — reines Inline-SVG, keine externe
   Chart-Bibliothek, Verlauf existiert nur im Browser-Tab
 - aktuelles Tages-Limit, Auslastung seit lokaler Mitternacht
-  (Kalendertag-Zähler, kein 24h-Fenster), verbleibendes Tagesbudget
+  (Kalendertag-Zähler, kein 24h-Fenster), verbleibendes Tagesbudget,
+  sowie kumulierte Tokens (in/out) und dieselbe
+  fresh/Cache-Creation/Cache-Read-Aufschlüsselung wie beim letzten
+  Request, aber über alle Requests seit Mitternacht aufsummiert
 - ein Formular, um TPM-Limit und/oder Tages-Limit **ohne Neustart**
   zu ändern (Felder sind unabhängig — nur ausgefüllte werden gesetzt)
 - Lifetime-Statistik (Tokens/Requests seit Prozessstart)
@@ -199,14 +202,6 @@ gesetzt ist — dann muss der Wert damit übereinstimmen.
   `/v1/models`) sind **nicht** verdrahtet — solche Requests treffen
   auf den `/`-Dashboard-Handler (liefern die HTML-Seite bei `GET`
   bzw. `405` sonst) statt bei Langdock anzukommen.
-- **Bekannter Bug — Tagesbudget bei abgebrochenem Streaming:** Bricht
-  ein `"stream": true`-Request ab, bevor jemals ein `usage`-Feld per
-  SSE empfangen wurde, bucht der Proxy aktuell die volle Preflight-
-  Reservierung (geschätzte Input-Tokens + `max_tokens`) statt `0` in
-  den Tageszähler ein — ein Verstoß gegen die in SPEC.md §5.5
-  beschriebene "nur tatsächlicher Verbrauch zählt"-Regel. Für das
-  TPM-Fenster ist das Verhalten dagegen korrekt (siehe SPEC.md §5.5
-  für Details).
 
 Details und Architektur-Hintergrund: [SPEC.md](SPEC.md).
 
