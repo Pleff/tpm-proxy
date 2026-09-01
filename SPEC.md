@@ -107,12 +107,19 @@ Start-Zeile mit Versionsnummer, Port, Ziel-Endpunkt und den aktiven
 Start-Limits aus, z.B.:
 
 ```
-tpm-proxy v0.1.0-SNAPSHOT - listening on port 8080, forwarding to https://api.langdock.com/anthropic/eu (TPM limit: 40000, daily limit: 1000000)
+2026-09-01 10:15:00.512 tpm-proxy: v0.1.0-SNAPSHOT - listening on port 8080, forwarding to https://api.langdock.com/anthropic/eu (TPM limit: 40000, daily limit: 1000000)
 ```
 
 Die Versionsnummer stammt aus dem Maven-Projekt (`pom.xml`) und wird
 beim Build per Resource-Filtering in eine Property-Datei im Jar
 geschrieben — kein manuelles Pflegen einer zweiten Versionsangabe.
+
+**Jede** Logzeile — Start, Requests, Ablehnungen, Fehler, Limit-
+Änderungen — läuft durch eine zentrale `Log`-Klasse (Abschnitt 7), die
+automatisch einen `yyyy-MM-dd HH:mm:ss.SSS`-Zeitstempel (lokale
+Zeitzone) voranstellt. Es gibt keinen anderen Weg, auf stdout/stderr zu
+schreiben, daher kann keine Logzeile versehentlich ohne Zeitstempel
+entstehen.
 
 **CLI-seitige Einrichtung** (Beispiel Claude Code, analog für opencode
 mit dessen jeweiligen Env-Var-Namen):

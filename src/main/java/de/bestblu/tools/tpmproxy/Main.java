@@ -28,7 +28,7 @@ public final class Main {
         try {
             config = ProxyConfig.fromEnv();
         } catch (ConfigException e) {
-            System.err.println("tpm-proxy: invalid configuration - " + e.getMessage());
+            Log.error("invalid configuration - " + e.getMessage());
             System.exit(1);
             return;
         }
@@ -52,13 +52,12 @@ public final class Main {
             server.createContext("/", new DashboardHandler());
 
             server.start();
-            System.out.printf(
-                    "tpm-proxy v%s - listening on port %d, forwarding to %s (TPM limit: %d, daily limit: %d)%n",
+            Log.infof("v%s - listening on port %d, forwarding to %s (TPM limit: %d, daily limit: %d)",
                     Version.get(), config.proxyPort(), config.langdockBaseUrl(),
                     config.initialTpmLimit(), config.initialDailyTokenLimit());
-            System.out.printf("tpm-proxy dashboard: http://localhost:%d/%n", config.proxyPort());
+            Log.infof("dashboard: http://localhost:%d/", config.proxyPort());
         } catch (IOException e) {
-            System.err.println("tpm-proxy: failed to start HTTP server - " + e.getMessage());
+            Log.error("failed to start HTTP server - " + e.getMessage());
             System.exit(1);
         }
     }

@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;
+import de.bestblu.tools.tpmproxy.Log;
 import de.bestblu.tools.tpmproxy.config.ProxyConfig;
 import de.bestblu.tools.tpmproxy.limiter.DailyTokenLimiter;
 import de.bestblu.tools.tpmproxy.limiter.SlidingWindowLimiter;
@@ -269,8 +270,8 @@ public class MessagesHandler implements HttpHandler {
         stats.recordCompletedRequest(model, streaming, inputTokens, outputTokens, durationMillis, client);
         SlidingWindowLimiter.Snapshot tpmSnapshot = tpmLimiter.snapshot();
         DailyTokenLimiter.Snapshot dailySnapshot = dailyLimiter.snapshot();
-        System.out.printf(
-                "tpm-proxy: client=%s model=%s stream=%b tokens=%d (in=%d out=%d) duration=%dms | window=%d/%d tpm | day=%d/%d | lifetime=%d tokens / %d requests%n",
+        Log.infof(
+                "client=%s model=%s stream=%b tokens=%d (in=%d out=%d) duration=%dms | window=%d/%d tpm | day=%d/%d | lifetime=%d tokens / %d requests",
                 client, model, streaming, inputTokens + outputTokens, inputTokens, outputTokens, durationMillis,
                 tpmSnapshot.windowUsage(), tpmSnapshot.limit(), dailySnapshot.usage(), dailySnapshot.limit(),
                 stats.totalTokens(), stats.totalRequests());
@@ -283,7 +284,7 @@ public class MessagesHandler implements HttpHandler {
     }
 
     private void logFailed(String model, boolean streaming, int upstreamStatus, long startNanos) {
-        System.out.printf("tpm-proxy: model=%s stream=%b upstream_status=%d duration=%dms (no tokens charged)%n",
+        Log.infof("model=%s stream=%b upstream_status=%d duration=%dms (no tokens charged)",
                 model, streaming, upstreamStatus, millisSince(startNanos));
     }
 
@@ -296,8 +297,8 @@ public class MessagesHandler implements HttpHandler {
      */
     private void logRejected(String model, boolean streaming, String scope, long retryAfterMillis,
                               int estimatedInputTokens, int maxTokens, long startNanos) {
-        System.out.printf(
-                "tpm-proxy: model=%s stream=%b REJECTED (%s budget exhausted) reservation=%d (est.input=%d + max_tokens=%d) retryAfter=%dms duration=%dms%n",
+        Log.infof(
+                "model=%s stream=%b REJECTED (%s budget exhausted) reservation=%d (est.input=%d + max_tokens=%d) retryAfter=%dms duration=%dms",
                 model, streaming, scope, estimatedInputTokens + maxTokens, estimatedInputTokens, maxTokens,
                 retryAfterMillis, millisSince(startNanos));
     }

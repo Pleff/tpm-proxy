@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;
+import de.bestblu.tools.tpmproxy.Log;
 import de.bestblu.tools.tpmproxy.limiter.DailyTokenLimiter;
 import de.bestblu.tools.tpmproxy.limiter.SlidingWindowLimiter;
 
@@ -71,13 +72,13 @@ public class LimitHandler implements HttpHandler {
             int newLimit = body.get("tpmLimit").asInt();
             int oldLimit = tpmLimiter.limit();
             tpmLimiter.setLimit(newLimit);
-            System.out.printf("tpm-proxy: TPM limit changed %d -> %d%n", oldLimit, newLimit);
+            Log.infof("TPM limit changed %d -> %d", oldLimit, newLimit);
         }
         if (hasDaily) {
             int newLimit = body.get("dailyLimit").asInt();
             int oldLimit = dailyLimiter.limit();
             dailyLimiter.setLimit(newLimit);
-            System.out.printf("tpm-proxy: daily token limit changed %d -> %d%n", oldLimit, newLimit);
+            Log.infof("daily token limit changed %d -> %d", oldLimit, newLimit);
         }
 
         writeCurrentLimits(exchange);

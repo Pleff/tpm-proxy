@@ -69,8 +69,8 @@ Versionsnummer, Port, Ziel-Endpunkt und den aktiven Start-Limits aus,
 z.B.:
 
 ```
-tpm-proxy v0.1.0-SNAPSHOT - listening on port 8080, forwarding to https://api.langdock.com/anthropic/eu (TPM limit: 40000, daily limit: 1000000)
-tpm-proxy dashboard: http://localhost:8080/
+2026-09-01 10:15:00.512 tpm-proxy: v0.1.0-SNAPSHOT - listening on port 8080, forwarding to https://api.langdock.com/anthropic/eu (TPM limit: 40000, daily limit: 1000000)
+2026-09-01 10:15:00.513 tpm-proxy: dashboard: http://localhost:8080/
 ```
 
 ## Web-Dashboard
@@ -119,8 +119,13 @@ zusätzliche Server-Logik.
 Pro Request erscheint eine Zeile auf stdout, z.B.:
 
 ```
-tpm-proxy: model=claude-sonnet-5 stream=false tokens=35 (in=10 out=25) duration=842ms | window=35/40000 tpm | day=35/1000000 | lifetime=35 tokens / 1 requests
+2026-09-01 10:15:03.842 tpm-proxy: model=claude-sonnet-5 stream=false tokens=35 (in=10 out=25) duration=842ms | window=35/40000 tpm | day=35/1000000 | lifetime=35 tokens / 1 requests
 ```
+
+Jede Logzeile (inklusive Start-Zeile, Fehlern und Limit-Änderungen)
+trägt denselben `yyyy-MM-dd HH:mm:ss.SSS`-Zeitstempel-Präfix (lokale
+Zeitzone) — zentral in einer `Log`-Klasse, sodass keine Logzeile ohne
+Zeitstempel entstehen kann.
 
 Bei lokal abgelehnten Requests (TPM- oder Tages-Budget erschöpft) eine
 `REJECTED`-Zeile mit Angabe, welches Budget betroffen war, sowie
