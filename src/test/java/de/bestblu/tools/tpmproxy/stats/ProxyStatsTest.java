@@ -27,7 +27,7 @@ class ProxyStatsTest {
     void recordsASingleCompletedRequest() {
         ProxyStats stats = new ProxyStats();
 
-        stats.recordCompletedRequest("claude-3-5-sonnet", true, 100, 50, 1234L);
+        stats.recordCompletedRequest("claude-3-5-sonnet", true, 100, 50, 1234L, "opencode");
 
         assertEquals(150, stats.totalTokens());
         assertEquals(1, stats.totalRequests());
@@ -39,14 +39,16 @@ class ProxyStatsTest {
         assertEquals(50, last.outputTokens());
         assertEquals(150, last.totalTokens());
         assertEquals(1234L, last.durationMillis());
+        assertEquals("opencode", last.client());
+        assertTrue(last.timestampMillis() > 0);
     }
 
     @Test
     void accumulatesTotalsAcrossMultipleRequests() {
         ProxyStats stats = new ProxyStats();
 
-        stats.recordCompletedRequest("model-a", false, 10, 20, 100L);
-        stats.recordCompletedRequest("model-b", true, 30, 40, 200L);
+        stats.recordCompletedRequest("model-a", false, 10, 20, 100L, "client-a");
+        stats.recordCompletedRequest("model-b", true, 30, 40, 200L, "client-b");
 
         assertEquals(100, stats.totalTokens()); // (10+20) + (30+40)
         assertEquals(2, stats.totalRequests());
@@ -56,8 +58,8 @@ class ProxyStatsTest {
     void lastRequestReflectsTheMostRecentCallOnly() {
         ProxyStats stats = new ProxyStats();
 
-        stats.recordCompletedRequest("model-a", false, 10, 20, 100L);
-        stats.recordCompletedRequest("model-b", true, 5, 5, 50L);
+        stats.recordCompletedRequest("model-a", false, 10, 20, 100L, "client-a");
+        stats.recordCompletedRequest("model-b", true, 5, 5, 50L, "client-b");
 
         LastRequest last = stats.lastRequest();
         assertEquals("model-b", last.model());
@@ -77,7 +79,7 @@ class ProxyStatsTest {
             pool.submit(() -> {
                 try {
                     for (int i = 0; i < callsPerThread; i++) {
-                        stats.recordCompletedRequest("model", false, 1, 1, 1L);
+                        stats.recordCompletedRequest("model", false, 1, 1, 1L, "client");
                     }
                 } finally {
                     latch.countDown();

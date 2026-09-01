@@ -91,7 +91,10 @@ Zeigt live (Refresh alle 2s):
 - ein Formular, um TPM-Limit und/oder Tages-Limit **ohne Neustart**
   zu ändern (Felder sind unabhängig — nur ausgefüllte werden gesetzt)
 - Lifetime-Statistik (Tokens/Requests seit Prozessstart)
-- Details zum letzten Request (Modell, Streaming, Tokens, Dauer)
+- Details zum letzten Request (Zeitpunkt, Client — aus dem
+  `User-Agent`-Header, falls vorhanden —, Modell, Streaming, Tokens,
+  Dauer)
+- 2-spaltiges Layout (auf schmalen Fenstern einspaltig)
 
 Das Dashboard ist eine statische Seite, die ausschließlich die unten
 dokumentierten `/internal/*`-Endpunkte per `fetch()` aufruft — keine

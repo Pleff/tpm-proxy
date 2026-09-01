@@ -287,7 +287,9 @@ auf Request-Ebene übernimmt ohnehin der TPM-Limiter.
   TPM-Reservierungen, `pendingTokens` (Summe der Tokens aller
   Requests, die aktuell auf freies TPM-Budget warten — siehe unten),
   Lifetime-Statistik (Tokens/Requests seit Prozessstart) und Details
-  zum letzten Request (Modell, Streaming, Tokens, Dauer).
+  zum letzten Request (Zeitpunkt, Client — best-effort aus dem
+  `User-Agent`-Header, `"unknown"` falls nicht gesetzt —, Modell,
+  Streaming, Tokens, Dauer).
 - `GET /`: Web-Dashboard (statisches HTML, pollt `/internal/status`
   alle 2s) — zeigt dieselben Werte visuell inkl. Fortschrittsbalken
   für TPM- und Tagesbudget, ein Zeitreihen-Diagramm (Inline-SVG, kein

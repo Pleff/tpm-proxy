@@ -153,7 +153,7 @@ public class MessagesHandler implements HttpHandler {
             } else {
                 releaseBudget(budget);
             }
-            logCompleted(model, false, inputTokens, outputTokens, startNanos);
+            logCompleted(exchange, model, false, inputTokens, outputTokens, startNanos);
         } else {
             // Real error from Langdock (SPEC.md Section 5.3) - passed through unchanged; no tokens were spent.
             releaseBudget(budget);
@@ -211,7 +211,7 @@ public class MessagesHandler implements HttpHandler {
                 // reservation as-is rather than releasing it (SPEC.md Section 5.1: no negative rebooking).
                 correctBudget(budget, budget.tpm().tokens());
             }
-            logCompleted(model, true, usage[0], usage[1], startNanos);
+            logCompleted(exchange, model, true, usage[0], usage[1], startNanos);
         }
     }
 
@@ -262,16 +262,24 @@ public class MessagesHandler implements HttpHandler {
     }
 
     /** Logs a completed request and records it in the lifetime stats (SPEC.md Section 7). */
-    private void logCompleted(String model, boolean streaming, int inputTokens, int outputTokens, long startNanos) {
+    private void logCompleted(HttpExchange exchange, String model, boolean streaming, int inputTokens, int outputTokens,
+                               long startNanos) {
         long durationMillis = millisSince(startNanos);
-        stats.recordCompletedRequest(model, streaming, inputTokens, outputTokens, durationMillis);
+        String client = clientOf(exchange);
+        stats.recordCompletedRequest(model, streaming, inputTokens, outputTokens, durationMillis, client);
         SlidingWindowLimiter.Snapshot tpmSnapshot = tpmLimiter.snapshot();
         DailyTokenLimiter.Snapshot dailySnapshot = dailyLimiter.snapshot();
         System.out.printf(
-                "tpm-proxy: model=%s stream=%b tokens=%d (in=%d out=%d) duration=%dms | window=%d/%d tpm | day=%d/%d | lifetime=%d tokens / %d requests%n",
-                model, streaming, inputTokens + outputTokens, inputTokens, outputTokens, durationMillis,
+                "tpm-proxy: client=%s model=%s stream=%b tokens=%d (in=%d out=%d) duration=%dms | window=%d/%d tpm | day=%d/%d | lifetime=%d tokens / %d requests%n",
+                client, model, streaming, inputTokens + outputTokens, inputTokens, outputTokens, durationMillis,
                 tpmSnapshot.windowUsage(), tpmSnapshot.limit(), dailySnapshot.usage(), dailySnapshot.limit(),
                 stats.totalTokens(), stats.totalRequests());
+    }
+
+    /** Best-effort client identification via User-Agent - not sent by every client, falls back to "unknown". */
+    private String clientOf(HttpExchange exchange) {
+        String userAgent = exchange.getRequestHeaders().getFirst("User-Agent");
+        return (userAgent == null || userAgent.isBlank()) ? "unknown" : userAgent;
     }
 
     private void logFailed(String model, boolean streaming, int upstreamStatus, long startNanos) {

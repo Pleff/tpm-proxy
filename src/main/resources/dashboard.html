@@ -6,12 +6,18 @@
 <title>tpm-proxy</title>
 <style>
   :root { color-scheme: light dark; }
-  body { font-family: system-ui, sans-serif; max-width: 640px; margin: 2rem auto; padding: 0 1rem; }
+  body { font-family: system-ui, sans-serif; max-width: 960px; margin: 2rem auto; padding: 0 1rem; }
   h1 { font-size: 1.4rem; margin-bottom: .25rem; }
   h2 { font-size: 1rem; margin: 0 0 .75rem; opacity: .85; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; align-items: start; }
+  .grid .full { grid-column: 1 / -1; }
+  @media (max-width: 700px) {
+    .grid { grid-template-columns: 1fr; }
+  }
   .card { border: 1px solid #8884; border-radius: 8px; padding: 1rem; margin-bottom: 1rem; }
-  .stat { display: flex; justify-content: space-between; padding: .25rem 0; }
-  .stat span:first-child { opacity: .7; }
+  .stat { display: flex; justify-content: space-between; gap: 1rem; padding: .25rem 0; }
+  .stat span:first-child { opacity: .7; flex-shrink: 0; }
+  .stat span:last-child { text-align: right; word-break: break-word; }
   .bar-track { background: #8882; border-radius: 4px; height: 10px; overflow: hidden; margin-top: .75rem; }
   .bar-fill { background: #2a7; height: 100%; width: 0; transition: width .3s; }
   .bar-fill.warn { background: #d90; }
@@ -33,65 +39,69 @@
   <h1>tpm-proxy <span id="version" style="font-size:.8rem;opacity:.5"></span></h1>
   <p style="opacity:.7">Lokaler TPM-/Tages-Rate-Limiting-Proxy vor Langdock</p>
 
-  <div class="card">
-    <h2>TPM-Budget (60s-Fenster = aktuelle Rate)</h2>
-    <div class="stat"><span>TPM-Limit</span><span id="tpmLimit">-</span></div>
-    <div class="stat"><span>Auslastung</span><span id="windowUsage">-</span></div>
-    <div class="stat"><span>Verbleibend</span><span id="remaining">-</span></div>
-    <div class="stat"><span>Aktive Reservierungen</span><span id="activeReservations">-</span></div>
-    <div class="stat"><span>Wartende Tokens (Queue)</span><span id="pendingTokens">-</span></div>
-    <div class="bar-track"><div class="bar-fill" id="tpmBar"></div></div>
-  </div>
-
-  <div class="card">
-    <h2>TPM-Auslastung über Zeit</h2>
-    <svg id="chart" class="chart" viewBox="0 0 600 160" preserveAspectRatio="none">
-      <line id="limitLine" x1="0" x2="600" y1="0" y2="0" stroke="currentColor" stroke-opacity="0.3" stroke-dasharray="4 4" />
-      <polyline id="outgoingLine" fill="none" stroke="#2a7" stroke-width="2" points="" />
-      <polyline id="waitingLine" fill="none" stroke="#d33" stroke-width="2" points="" />
-    </svg>
-    <div class="legend">
-      <span><span class="swatch" style="background:#2a7"></span>Verarbeitet (window, &lt; Limit)</span>
-      <span><span class="swatch" style="background:#d33"></span>Wartend (Queue)</span>
+  <div class="grid">
+    <div class="card">
+      <h2>TPM-Budget (60s-Fenster = aktuelle Rate)</h2>
+      <div class="stat"><span>TPM-Limit</span><span id="tpmLimit">-</span></div>
+      <div class="stat"><span>Auslastung</span><span id="windowUsage">-</span></div>
+      <div class="stat"><span>Verbleibend</span><span id="remaining">-</span></div>
+      <div class="stat"><span>Aktive Reservierungen</span><span id="activeReservations">-</span></div>
+      <div class="stat"><span>Wartende Tokens (Queue)</span><span id="pendingTokens">-</span></div>
+      <div class="bar-track"><div class="bar-fill" id="tpmBar"></div></div>
     </div>
-  </div>
 
-  <div class="card">
-    <h2>Tagesbudget (seit lokaler Mitternacht)</h2>
-    <div class="stat"><span>Tages-Limit</span><span id="dailyLimit">-</span></div>
-    <div class="stat"><span>Auslastung</span><span id="dailyUsage">-</span></div>
-    <div class="stat"><span>Verbleibend</span><span id="dailyRemaining">-</span></div>
-    <div class="bar-track"><div class="bar-fill" id="dailyBar"></div></div>
-  </div>
+    <div class="card">
+      <h2>Tagesbudget (seit lokaler Mitternacht)</h2>
+      <div class="stat"><span>Tages-Limit</span><span id="dailyLimit">-</span></div>
+      <div class="stat"><span>Auslastung</span><span id="dailyUsage">-</span></div>
+      <div class="stat"><span>Verbleibend</span><span id="dailyRemaining">-</span></div>
+      <div class="bar-track"><div class="bar-fill" id="dailyBar"></div></div>
+    </div>
 
-  <div class="card">
-    <h2>Limits ändern</h2>
-    <form id="limitForm">
-      <div class="field-row">
-        <label for="newTpmLimit">TPM-Limit</label>
-        <input type="number" id="newTpmLimit" min="1" step="1" placeholder="unverändert">
+    <div class="card full">
+      <h2>TPM-Auslastung über Zeit</h2>
+      <svg id="chart" class="chart" viewBox="0 0 600 160" preserveAspectRatio="none">
+        <line id="limitLine" x1="0" x2="600" y1="0" y2="0" stroke="currentColor" stroke-opacity="0.3" stroke-dasharray="4 4" />
+        <polyline id="outgoingLine" fill="none" stroke="#2a7" stroke-width="2" points="" />
+        <polyline id="waitingLine" fill="none" stroke="#d33" stroke-width="2" points="" />
+      </svg>
+      <div class="legend">
+        <span><span class="swatch" style="background:#2a7"></span>Verarbeitet (window, &lt; Limit)</span>
+        <span><span class="swatch" style="background:#d33"></span>Wartend (Queue)</span>
       </div>
-      <div class="field-row">
-        <label for="newDailyLimit">Tages-Limit</label>
-        <input type="number" id="newDailyLimit" min="1" step="1" placeholder="unverändert">
-      </div>
-      <button type="submit">Setzen</button>
-    </form>
-    <div id="limitMsg"></div>
-  </div>
+    </div>
 
-  <div class="card">
-    <h2>Lifetime (seit Prozessstart)</h2>
-    <div class="stat"><span>Tokens gesamt</span><span id="totalTokens">-</span></div>
-    <div class="stat"><span>Requests gesamt</span><span id="totalRequests">-</span></div>
-  </div>
+    <div class="card">
+      <h2>Limits ändern</h2>
+      <form id="limitForm">
+        <div class="field-row">
+          <label for="newTpmLimit">TPM-Limit</label>
+          <input type="number" id="newTpmLimit" min="1" step="1" placeholder="unverändert">
+        </div>
+        <div class="field-row">
+          <label for="newDailyLimit">Tages-Limit</label>
+          <input type="number" id="newDailyLimit" min="1" step="1" placeholder="unverändert">
+        </div>
+        <button type="submit">Setzen</button>
+      </form>
+      <div id="limitMsg"></div>
+    </div>
 
-  <div class="card">
-    <h2>Letzter Request</h2>
-    <div class="stat"><span>Modell</span><span id="lastModel">-</span></div>
-    <div class="stat"><span>Streaming</span><span id="lastStreaming">-</span></div>
-    <div class="stat"><span>Tokens (in/out)</span><span id="lastTokens">-</span></div>
-    <div class="stat"><span>Dauer</span><span id="lastDuration">-</span></div>
+    <div class="card">
+      <h2>Lifetime (seit Prozessstart)</h2>
+      <div class="stat"><span>Tokens gesamt</span><span id="totalTokens">-</span></div>
+      <div class="stat"><span>Requests gesamt</span><span id="totalRequests">-</span></div>
+    </div>
+
+    <div class="card full">
+      <h2>Letzter Request</h2>
+      <div class="stat"><span>Zeitpunkt</span><span id="lastTimestamp">-</span></div>
+      <div class="stat"><span>Client</span><span id="lastClient">-</span></div>
+      <div class="stat"><span>Modell</span><span id="lastModel">-</span></div>
+      <div class="stat"><span>Streaming</span><span id="lastStreaming">-</span></div>
+      <div class="stat"><span>Tokens (in/out)</span><span id="lastTokens">-</span></div>
+      <div class="stat"><span>Dauer</span><span id="lastDuration">-</span></div>
+    </div>
   </div>
 
   <footer>Langdock-Endpunkt: <code id="baseUrl">-</code> · aktualisiert alle 2s</footer>
@@ -161,6 +171,10 @@ async function refresh() {
     dailyBar.className = barClass(dailyPct);
 
     const last = s.lastRequest;
+    document.getElementById('lastTimestamp').textContent = last
+      ? new Date(last.timestampMillis).toLocaleString('de-DE')
+      : '-';
+    document.getElementById('lastClient').textContent = last ? last.client : '-';
     document.getElementById('lastModel').textContent = last ? last.model : '-';
     document.getElementById('lastStreaming').textContent = last ? (last.streaming ? 'ja' : 'nein') : '-';
     document.getElementById('lastTokens').textContent = last

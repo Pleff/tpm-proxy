@@ -66,6 +66,8 @@ public class StatusHandler implements HttpHandler {
             lastRequest.put("outputTokens", last.outputTokens());
             lastRequest.put("totalTokens", last.totalTokens());
             lastRequest.put("durationMillis", last.durationMillis());
+            lastRequest.put("client", last.client());
+            lastRequest.put("timestampMillis", last.timestampMillis());
             body.put("lastRequest", lastRequest);
         }
 

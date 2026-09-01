@@ -14,11 +14,13 @@ public final class ProxyStats {
     private final AtomicLong totalRequests = new AtomicLong();
     private final AtomicReference<LastRequest> lastRequest = new AtomicReference<>();
 
-    public void recordCompletedRequest(String model, boolean streaming, int inputTokens, int outputTokens, long durationMillis) {
+    public void recordCompletedRequest(String model, boolean streaming, int inputTokens, int outputTokens,
+                                        long durationMillis, String client) {
         int tokens = inputTokens + outputTokens;
         totalTokens.addAndGet(tokens);
         totalRequests.incrementAndGet();
-        lastRequest.set(new LastRequest(model, streaming, inputTokens, outputTokens, tokens, durationMillis));
+        lastRequest.set(new LastRequest(model, streaming, inputTokens, outputTokens, tokens, durationMillis,
+                client, System.currentTimeMillis()));
     }
 
     public long totalTokens() {
@@ -34,6 +36,7 @@ public final class ProxyStats {
     }
 
     public record LastRequest(
-            String model, boolean streaming, int inputTokens, int outputTokens, int totalTokens, long durationMillis) {
+            String model, boolean streaming, int inputTokens, int outputTokens, int totalTokens, long durationMillis,
+            String client, long timestampMillis) {
     }
 }
