@@ -49,7 +49,6 @@ public class StatusHandler implements HttpHandler {
         body.put("windowUsage", tpmSnapshot.windowUsage()); // current tokens/min - it IS the rate, by construction of the 60s window
         body.put("remaining", tpmSnapshot.remaining());
         body.put("activeReservations", tpmSnapshot.activeReservations());
-        body.put("pendingTokens", tpmSnapshot.pendingTokens()); // queued, waiting for TPM budget to free up
         body.put("dailyLimit", dailySnapshot.limit());
         body.put("dailyUsage", dailySnapshot.usage()); // resets to 0 at local midnight, not a rolling window
         body.put("dailyRemaining", dailySnapshot.remaining());

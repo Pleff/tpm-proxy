@@ -81,11 +81,15 @@ Im Browser öffnen: **http://localhost:8080/** (Port anpassen, falls
 Zeigt live (Refresh alle 2s):
 
 - aktuelles TPM-Limit, Auslastung im 60s-Fenster (= aktuelle Rate),
-  verbleibendes Budget, aktive Reservierungen, wartende Tokens (Queue)
+  verbleibendes Budget, aktive Reservierungen (Anzahl Einträge im
+  Fenster — nicht gleichbedeutend mit "gerade laufenden Requests",
+  ein Eintrag bleibt bis zu 60s stehen, auch wenn der Request längst
+  fertig ist)
 - ein Zeitreihen-Diagramm der letzten ~80s: verarbeitete Tokens
-  (bleiben unter dem TPM-Limit) vs. wartende Tokens (Queue, baut sich
-  Stück für Stück ab) — reines Inline-SVG, keine externe
-  Chart-Bibliothek, Verlauf existiert nur im Browser-Tab
+  (bleiben unter dem TPM-Limit) vs. Anzahl aktiver Reservierungen
+  (eigene Skala, da Tokens und Anzahl nicht vergleichbar sind) —
+  reines Inline-SVG, keine externe Chart-Bibliothek, Verlauf
+  existiert nur im Browser-Tab
 - aktuelles Tages-Limit, Auslastung seit lokaler Mitternacht
   (Kalendertag-Zähler, kein 24h-Fenster), verbleibendes Tagesbudget
 - ein Formular, um TPM-Limit und/oder Tages-Limit **ohne Neustart**

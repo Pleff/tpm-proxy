@@ -4,7 +4,6 @@ import java.time.Clock;
 import java.util.ArrayDeque;
 import java.util.Deque;
 import java.util.Optional;
-import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.ReentrantLock;
 
 /**
@@ -22,7 +21,6 @@ public final class SlidingWindowLimiter {
     private final Deque<Reservation> window = new ArrayDeque<>();
     private final ReentrantLock lock = new ReentrantLock();
     private final Clock clock;
-    private final AtomicLong pendingTokens = new AtomicLong();
     private volatile int limit;
     private long currentSum = 0;
 
@@ -75,33 +73,21 @@ public final class SlidingWindowLimiter {
 
     /**
      * Polls for available budget until it can reserve {@code tokens} or
-     * {@code timeoutMillis} elapses (SPEC.md Section 5.3). While waiting,
-     * {@code tokens} counts toward {@link #pendingTokens()} - the backlog of
-     * requests queued on this budget, processed as budget frees up.
+     * {@code timeoutMillis} elapses (SPEC.md Section 5.3).
      */
     public Optional<Reservation> reserveBlocking(int tokens, long timeoutMillis) throws InterruptedException {
-        pendingTokens.addAndGet(tokens);
-        try {
-            long deadline = clock.millis() + timeoutMillis;
-            while (true) {
-                Optional<Reservation> reservation = tryReserve(tokens);
-                if (reservation.isPresent()) {
-                    return reservation;
-                }
-                long remaining = deadline - clock.millis();
-                if (remaining <= 0) {
-                    return Optional.empty();
-                }
-                Thread.sleep(Math.min(POLL_INTERVAL_MILLIS, remaining));
+        long deadline = clock.millis() + timeoutMillis;
+        while (true) {
+            Optional<Reservation> reservation = tryReserve(tokens);
+            if (reservation.isPresent()) {
+                return reservation;
             }
-        } finally {
-            pendingTokens.addAndGet(-tokens);
+            long remaining = deadline - clock.millis();
+            if (remaining <= 0) {
+                return Optional.empty();
+            }
+            Thread.sleep(Math.min(POLL_INTERVAL_MILLIS, remaining));
         }
-    }
-
-    /** Sum of tokens across requests currently waiting in {@link #reserveBlocking} for budget to free up. */
-    public long pendingTokens() {
-        return pendingTokens.get();
     }
 
     /** Replaces a reservation's provisional token count with the actual usage. */
@@ -151,7 +137,7 @@ public final class SlidingWindowLimiter {
         lock.lock();
         try {
             evictExpired();
-            return new Snapshot(limit, currentSum, Math.max(0, limit - currentSum), window.size(), pendingTokens.get());
+            return new Snapshot(limit, currentSum, Math.max(0, limit - currentSum), window.size());
         } finally {
             lock.unlock();
         }
@@ -179,6 +165,6 @@ public final class SlidingWindowLimiter {
         }
     }
 
-    public record Snapshot(int limit, long windowUsage, long remaining, int activeReservations, long pendingTokens) {
+    public record Snapshot(int limit, long windowUsage, long remaining, int activeReservations) {
     }
 }

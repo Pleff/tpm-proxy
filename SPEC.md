@@ -164,6 +164,13 @@ CLI) nicht dasselbe Budget doppelt verplanen.
   jedem Check werden Einträge älter als 60s verworfen und die
   verbleibenden Werte summiert.
 - `verfügbares Budget = aktuelles TPM_LIMIT − Summe(aktuelles Fenster)`.
+- `activeReservations` (in `/internal/status` und Dashboard) =
+  Anzahl der Einträge in der Deque, **nicht** "gerade laufende
+  Requests". Ein Eintrag bleibt bis zu 60s stehen, auch wenn der
+  zugehörige Request längst abgeschlossen (auf den Ist-Wert
+  korrigiert) ist — die Zahl beantwortet "wie viele Posten stecken
+  aktuell in der Fenster-Summe", nicht "wie viele Requests laufen
+  gerade bei Langdock".
 
 **Sonderfall: einzelner Request größer als das Limit.** Ein Request,
 dessen eigene Reservierung (`input_tokens + max_tokens`) allein schon
@@ -185,10 +192,7 @@ Tagesbudget (5.5).
 
 - Passt die Reservierung nicht ins aktuelle Budget, wartet der
   Request bis zu `QUEUE_TIMEOUT_MS` lang (Polling/Wakeup, sobald
-  ältere Fenstereinträge ablaufen). Während dieser Wartezeit zählen
-  die angefragten Tokens zu `pendingTokens` (Abschnitt 7) — der
-  "Warteschlange", die sich Stück für Stück abbaut, sobald das
-  60s-Fenster wieder Platz macht.
+  ältere Fenstereinträge ablaufen).
 - Wird innerhalb des Timeouts kein Budget frei, antwortet der Proxy
   mit `429` im Anthropic-kompatiblen Fehlerformat:
   ```json
@@ -300,20 +304,21 @@ auf Request-Ebene übernimmt ohnehin der TPM-Limiter.
 - `GET /internal/status`: Version, aktueller TPM-Fensterverbrauch
   (60s) und Tagesverbrauch (seit letzter lokaler Mitternacht), aktive
   Limits, verbleibendes Budget je Zähler, Anzahl aktiver
-  TPM-Reservierungen, `pendingTokens` (Summe der Tokens aller
-  Requests, die aktuell auf freies TPM-Budget warten — siehe unten),
-  Lifetime-Statistik (Tokens/Requests seit Prozessstart) und Details
-  zum letzten Request (Zeitpunkt, Client — best-effort aus dem
-  `User-Agent`-Header, `"unknown"` falls nicht gesetzt —, Modell,
-  Streaming, Tokens, Dauer).
+  TPM-Reservierungen (`activeReservations` — siehe Abschnitt 5.2 für
+  die genaue Bedeutung), Lifetime-Statistik (Tokens/Requests seit
+  Prozessstart) und Details zum letzten Request (Zeitpunkt, Client —
+  best-effort aus dem `User-Agent`-Header, `"unknown"` falls nicht
+  gesetzt —, Modell, Streaming, Tokens, Dauer).
 - `GET /`: Web-Dashboard (statisches HTML, pollt `/internal/status`
   alle 2s) — zeigt dieselben Werte visuell inkl. Fortschrittsbalken
   für TPM- und Tagesbudget, ein Zeitreihen-Diagramm (Inline-SVG, kein
   externes Chart-Framework) mit zwei Kurven — verarbeitete Tokens
-  (`windowUsage`, bleibt unter `tpmLimit`) und wartende Tokens
-  (`pendingTokens`) — über die letzten ~80s, sowie ein Formular, um
-  `tpmLimit` und/oder `dailyLimit` per `PUT /internal/limit` zu
-  ändern. Die Zeitreihe wird ausschließlich im Browser aus den
+  (`windowUsage`, bleibt unter `tpmLimit`) und Anzahl aktiver
+  TPM-Reservierungen (`activeReservations`, eigene Skala, da Tokens
+  und Anzahl nicht vergleichbar sind) — über die letzten ~80s, sowie
+  ein Formular, um `tpmLimit` und/oder `dailyLimit` per
+  `PUT /internal/limit` zu ändern. Die Zeitreihe wird ausschließlich
+  im Browser aus den
   gepollten Werten aufgebaut (kein Backend-Verlauf, geht beim
   Neuladen der Seite verloren).
 - Ein Log pro Request auf stdout: Modell, Streaming-Flag, Tokens

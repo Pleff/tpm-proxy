@@ -46,7 +46,6 @@
       <div class="stat"><span>Auslastung</span><span id="windowUsage">-</span></div>
       <div class="stat"><span>Verbleibend</span><span id="remaining">-</span></div>
       <div class="stat"><span>Aktive Reservierungen</span><span id="activeReservations">-</span></div>
-      <div class="stat"><span>Wartende Tokens (Queue)</span><span id="pendingTokens">-</span></div>
       <div class="bar-track"><div class="bar-fill" id="tpmBar"></div></div>
     </div>
 
@@ -63,11 +62,11 @@
       <svg id="chart" class="chart" viewBox="0 0 600 160" preserveAspectRatio="none">
         <line id="limitLine" x1="0" x2="600" y1="0" y2="0" stroke="currentColor" stroke-opacity="0.3" stroke-dasharray="4 4" />
         <polyline id="outgoingLine" fill="none" stroke="#2a7" stroke-width="2" points="" />
-        <polyline id="waitingLine" fill="none" stroke="#d33" stroke-width="2" points="" />
+        <polyline id="reservationsLine" fill="none" stroke="#37f" stroke-width="2" points="" />
       </svg>
       <div class="legend">
-        <span><span class="swatch" style="background:#2a7"></span>Verarbeitet (window, &lt; Limit)</span>
-        <span><span class="swatch" style="background:#d33"></span>Wartend (Queue)</span>
+        <span><span class="swatch" style="background:#2a7"></span>Verarbeitet (Tokens, &lt; Limit)</span>
+        <span><span class="swatch" style="background:#37f"></span>Aktive Reservierungen (Anzahl, eigene Skala)</span>
       </div>
     </div>
 
@@ -113,27 +112,31 @@ function barClass(pct) {
 
 const CHART_MAX_SAMPLES = 40; // ~80s of history at the 2s poll interval, a bit more than one 60s TPM window
 const outgoingHistory = [];
-const waitingHistory = [];
+const reservationsHistory = [];
 
-function updateChart(windowUsage, pendingTokens, tpmLimit) {
+// Tokens (up to tpmLimit) and reservation count live on completely different
+// scales - each series is normalized against its own max so both stay visible
+// instead of the reservation count looking flat at the bottom.
+function updateChart(windowUsage, activeReservations, tpmLimit) {
   outgoingHistory.push(windowUsage);
-  waitingHistory.push(pendingTokens);
+  reservationsHistory.push(activeReservations);
   if (outgoingHistory.length > CHART_MAX_SAMPLES) outgoingHistory.shift();
-  if (waitingHistory.length > CHART_MAX_SAMPLES) waitingHistory.shift();
+  if (reservationsHistory.length > CHART_MAX_SAMPLES) reservationsHistory.shift();
 
   const width = 600, height = 160;
-  const maxY = Math.max(tpmLimit, ...outgoingHistory, ...waitingHistory, 1) * 1.05;
+  const tokenMaxY = Math.max(tpmLimit, ...outgoingHistory, 1) * 1.05;
+  const reservationsMaxY = Math.max(...reservationsHistory, 1) * 1.2;
 
-  const toPoints = (values) => values.map((v, i) => {
+  const toPoints = (values, maxY) => values.map((v, i) => {
     const x = values.length > 1 ? (i / (CHART_MAX_SAMPLES - 1)) * width : width;
     const y = height - (v / maxY) * height;
     return `${x.toFixed(1)},${y.toFixed(1)}`;
   }).join(' ');
 
-  document.getElementById('outgoingLine').setAttribute('points', toPoints(outgoingHistory));
-  document.getElementById('waitingLine').setAttribute('points', toPoints(waitingHistory));
+  document.getElementById('outgoingLine').setAttribute('points', toPoints(outgoingHistory, tokenMaxY));
+  document.getElementById('reservationsLine').setAttribute('points', toPoints(reservationsHistory, reservationsMaxY));
 
-  const limitY = (height - (tpmLimit / maxY) * height).toFixed(1);
+  const limitY = (height - (tpmLimit / tokenMaxY) * height).toFixed(1);
   document.getElementById('limitLine').setAttribute('y1', limitY);
   document.getElementById('limitLine').setAttribute('y2', limitY);
 }
@@ -149,8 +152,7 @@ async function refresh() {
     document.getElementById('windowUsage').textContent = s.windowUsage;
     document.getElementById('remaining').textContent = s.remaining;
     document.getElementById('activeReservations').textContent = s.activeReservations;
-    document.getElementById('pendingTokens').textContent = s.pendingTokens;
-    updateChart(s.windowUsage, s.pendingTokens, s.tpmLimit);
+    updateChart(s.windowUsage, s.activeReservations, s.tpmLimit);
 
     document.getElementById('dailyLimit').textContent = s.dailyLimit;
     document.getElementById('dailyUsage').textContent = s.dailyUsage;
