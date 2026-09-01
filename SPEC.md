@@ -173,6 +173,19 @@ CLI) nicht dasselbe Budget doppelt verplanen.
   ersetzt. Bricht der Stream vorzeitig ab (Verbindungsfehler), wird
   die Reservierung nicht unter den bereits gesendeten Anteil
   reduziert (kein negatives Nachbuchen).
+- **Cache-Tokens zählen mit:** `cache_creation_input_tokens` und
+  `cache_read_input_tokens` aus `usage` werden zum "Input"-Anteil der
+  Ist-Werte addiert (sowohl nicht-streaming als auch im
+  `message_start`-Event beim Streaming). Live beobachtet: Langdocks
+  reales TPM-Limit (workspace-weit) schlug trotz durchgehend winziger
+  `input_tokens`-Werte (`in=2`) mit einem echten `429` zu, obwohl die
+  lokale Buchhaltung (die nur `input_tokens` zählte) weit unter jedem
+  sinnvollen Limit lag. Vermutung: Caching spart Kosten, aber
+  vermutlich nicht Rechenkapazität — der wiederverwendete Kontext wird
+  bei jedem Request neu verarbeitet und zählt daher offenbar gegen das
+  reale TPM-Limit, auch wenn er günstig abgerechnet wird. Ohne diese
+  Korrektur zeigte das lokale Dashboard/Log fälschlich ein "gesundes"
+  Budget, während Langdock bereits ablehnte.
 
 ### 5.2 Sliding Window
 

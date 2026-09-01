@@ -148,7 +148,13 @@ public class MessagesHandler implements HttpHandler {
             int inputTokens = 0;
             int outputTokens = 0;
             if (usage != null) {
-                inputTokens = usage.path("input_tokens").asInt(0);
+                // Cache reads/creation are billed cheaply but appear to still count against
+                // Langdock's real TPM enforcement (observed: real upstream 429s despite tiny
+                // input_tokens across many requests) - fold them into "input" so local
+                // tracking reflects what's actually rate-limited, not just what's billed.
+                inputTokens = usage.path("input_tokens").asInt(0)
+                        + usage.path("cache_creation_input_tokens").asInt(0)
+                        + usage.path("cache_read_input_tokens").asInt(0);
                 outputTokens = usage.path("output_tokens").asInt(0);
                 correctBudget(budget, inputTokens + outputTokens);
             } else {
@@ -221,7 +227,13 @@ public class MessagesHandler implements HttpHandler {
             JsonNode event = json.readTree(eventData);
             String type = event.path("type").asText("");
             if ("message_start".equals(type)) {
-                usage[0] = event.path("message").path("usage").path("input_tokens").asInt(usage[0]);
+                // Same reasoning as forwardNonStreaming: fold cache reads/creation into
+                // "input" so this reflects what's actually rate-limited upstream, not
+                // just the (cheaply billed) input_tokens figure.
+                JsonNode msgUsage = event.path("message").path("usage");
+                usage[0] = msgUsage.path("input_tokens").asInt(0)
+                        + msgUsage.path("cache_creation_input_tokens").asInt(0)
+                        + msgUsage.path("cache_read_input_tokens").asInt(0);
             } else if ("message_delta".equals(type)) {
                 usage[1] = event.path("usage").path("output_tokens").asInt(usage[1]);
             }
