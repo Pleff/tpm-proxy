@@ -216,17 +216,29 @@ public class MessagesHandler implements HttpHandler {
                 "tpm-proxy: local TPM budget exhausted, retry later");
     }
 
+    /**
+     * Accepts either header convention client tools use for a configured API key:
+     * plain {@code x-api-key} (e.g. opencode's built-in Anthropic provider) or
+     * {@code Authorization: Bearer <token>} (e.g. ANTHROPIC_AUTH_TOKEN in Claude Code).
+     */
     private boolean isAuthorized(HttpExchange exchange) {
         String expectedToken = config.proxyClientToken();
         if (expectedToken == null) {
             return true;
         }
-        List<String> values = exchange.getRequestHeaders().get("Authorization");
-        if (values == null || values.isEmpty()) {
-            return false;
+        byte[] expected = expectedToken.getBytes(StandardCharsets.UTF_8);
+
+        String apiKeyHeader = exchange.getRequestHeaders().getFirst("x-api-key");
+        if (apiKeyHeader != null && MessageDigest.isEqual(apiKeyHeader.getBytes(StandardCharsets.UTF_8), expected)) {
+            return true;
         }
-        byte[] actual = values.get(0).getBytes(StandardCharsets.UTF_8);
-        byte[] expected = ("Bearer " + expectedToken).getBytes(StandardCharsets.UTF_8);
-        return MessageDigest.isEqual(actual, expected);
+
+        List<String> authHeaders = exchange.getRequestHeaders().get("Authorization");
+        if (authHeaders != null && !authHeaders.isEmpty()) {
+            byte[] expectedBearer = ("Bearer " + expectedToken).getBytes(StandardCharsets.UTF_8);
+            return MessageDigest.isEqual(authHeaders.get(0).getBytes(StandardCharsets.UTF_8), expectedBearer);
+        }
+
+        return false;
     }
 }
