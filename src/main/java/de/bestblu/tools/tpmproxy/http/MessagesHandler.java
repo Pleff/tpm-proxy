@@ -147,20 +147,25 @@ public class MessagesHandler implements HttpHandler {
             JsonNode usage = responseJson.get("usage");
             int inputTokens = 0;
             int outputTokens = 0;
+            int freshInputTokens = 0;
+            int cacheCreationTokens = 0;
+            int cacheReadTokens = 0;
             if (usage != null) {
                 // Cache reads/creation are billed cheaply but appear to still count against
                 // Langdock's real TPM enforcement (observed: real upstream 429s despite tiny
                 // input_tokens across many requests) - fold them into "input" so local
                 // tracking reflects what's actually rate-limited, not just what's billed.
-                inputTokens = usage.path("input_tokens").asInt(0)
-                        + usage.path("cache_creation_input_tokens").asInt(0)
-                        + usage.path("cache_read_input_tokens").asInt(0);
+                freshInputTokens = usage.path("input_tokens").asInt(0);
+                cacheCreationTokens = usage.path("cache_creation_input_tokens").asInt(0);
+                cacheReadTokens = usage.path("cache_read_input_tokens").asInt(0);
+                inputTokens = freshInputTokens + cacheCreationTokens + cacheReadTokens;
                 outputTokens = usage.path("output_tokens").asInt(0);
                 correctBudget(budget, inputTokens + outputTokens);
             } else {
                 releaseBudget(budget);
             }
-            logCompleted(exchange, model, false, inputTokens, outputTokens, startNanos);
+            logCompleted(exchange, model, false, inputTokens, outputTokens,
+                    freshInputTokens, cacheCreationTokens, cacheReadTokens, startNanos);
         } else {
             // Real error from Langdock (SPEC.md Section 5.3) - passed through unchanged; no tokens were spent.
             releaseBudget(budget);
@@ -194,7 +199,10 @@ public class MessagesHandler implements HttpHandler {
         copyResponseHeaders(response, exchange);
         exchange.sendResponseHeaders(200, 0); // chunked - length unknown up front
 
-        int[] usage = {0, 0}; // {input_tokens, output_tokens}, updated as SSE events arrive (SPEC.md Section 5.1)
+        // {input_tokens, output_tokens, cache_creation_input_tokens, cache_read_input_tokens},
+        // updated as SSE events arrive (SPEC.md Section 5.1). Kept separate (not pre-folded) so
+        // the breakdown is available for logging, not just the rate-limit-relevant total.
+        int[] usage = {0, 0, 0, 0};
         try (InputStream in = response.body();
              OutputStream out = exchange.getResponseBody();
              BufferedReader reader = new BufferedReader(new InputStreamReader(in, StandardCharsets.UTF_8))) {
@@ -210,20 +218,21 @@ public class MessagesHandler implements HttpHandler {
                 }
             }
         } finally {
-            int actual = usage[0] + usage[1];
+            // Cache reads/creation are billed cheaply but appear to still count against
+            // Langdock's real TPM enforcement - fold them into "input" for budget accounting.
+            int foldedInput = usage[0] + usage[2] + usage[3];
+            int actual = foldedInput + usage[1];
             if (actual > 0) {
                 correctBudget(budget, actual);
             } else {
                 // Stream ended without ever reporting usage (e.g. aborted mid-flight) - keep the
                 // TPM reservation as-is rather than releasing it (SPEC.md Section 5.1: no negative
-                // rebooking). KNOWN BUG (SPEC.md Section 5.5): correctBudget() applies this same
-                // still-provisional amount to the daily limiter too, which commits it as if it
-                // were real usage instead of releasing it to 0 - unlike the TPM window, the daily
-                // counter is documented to only ever count actual usage, so this path currently
-                // over-counts the day's total for aborted streams that never reported usage.
+                // rebooking). KNOWN BUG (SPEC.md Section 5.5, flagged separately): correctBudget()
+                // applies this same still-provisional amount to the daily limiter too, which commits
+                // it as if it were real usage instead of releasing it to 0.
                 correctBudget(budget, budget.tpm().tokens());
             }
-            logCompleted(exchange, model, true, usage[0], usage[1], startNanos);
+            logCompleted(exchange, model, true, foldedInput, usage[1], usage[0], usage[2], usage[3], startNanos);
         }
     }
 
@@ -232,13 +241,10 @@ public class MessagesHandler implements HttpHandler {
             JsonNode event = json.readTree(eventData);
             String type = event.path("type").asText("");
             if ("message_start".equals(type)) {
-                // Same reasoning as forwardNonStreaming: fold cache reads/creation into
-                // "input" so this reflects what's actually rate-limited upstream, not
-                // just the (cheaply billed) input_tokens figure.
                 JsonNode msgUsage = event.path("message").path("usage");
-                usage[0] = msgUsage.path("input_tokens").asInt(0)
-                        + msgUsage.path("cache_creation_input_tokens").asInt(0)
-                        + msgUsage.path("cache_read_input_tokens").asInt(0);
+                usage[0] = msgUsage.path("input_tokens").asInt(0);
+                usage[2] = msgUsage.path("cache_creation_input_tokens").asInt(0);
+                usage[3] = msgUsage.path("cache_read_input_tokens").asInt(0);
             } else if ("message_delta".equals(type)) {
                 usage[1] = event.path("usage").path("output_tokens").asInt(usage[1]);
             }
@@ -281,15 +287,17 @@ public class MessagesHandler implements HttpHandler {
 
     /** Logs a completed request and records it in the lifetime stats (SPEC.md Section 7). */
     private void logCompleted(HttpExchange exchange, String model, boolean streaming, int inputTokens, int outputTokens,
-                               long startNanos) {
+                               int freshInputTokens, int cacheCreationTokens, int cacheReadTokens, long startNanos) {
         long durationMillis = millisSince(startNanos);
         String client = clientOf(exchange);
-        stats.recordCompletedRequest(model, streaming, inputTokens, outputTokens, durationMillis, client);
+        stats.recordCompletedRequest(model, streaming, inputTokens, outputTokens, durationMillis, client,
+                freshInputTokens, cacheCreationTokens, cacheReadTokens);
         SlidingWindowLimiter.Snapshot tpmSnapshot = tpmLimiter.snapshot();
         DailyTokenLimiter.Snapshot dailySnapshot = dailyLimiter.snapshot();
         Log.infof(
-                "client=%s model=%s stream=%b tokens=%d (in=%d out=%d) duration=%dms | window=%d/%d tpm | day=%d/%d | lifetime=%d tokens / %d requests",
-                client, model, streaming, inputTokens + outputTokens, inputTokens, outputTokens, durationMillis,
+                "client=%s model=%s stream=%b tokens=%d (in=%d out=%d, fresh=%d cacheCreate=%d cacheRead=%d) duration=%dms | window=%d/%d tpm | day=%d/%d | lifetime=%d tokens / %d requests",
+                client, model, streaming, inputTokens + outputTokens, inputTokens, outputTokens,
+                freshInputTokens, cacheCreationTokens, cacheReadTokens, durationMillis,
                 tpmSnapshot.windowUsage(), tpmSnapshot.limit(), dailySnapshot.usage(), dailySnapshot.limit(),
                 stats.totalTokens(), stats.totalRequests());
     }

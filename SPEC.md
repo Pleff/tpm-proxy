@@ -377,7 +377,18 @@ Dies ist ein bekannter Bug, kein beabsichtigtes Verhalten.
   die genaue Bedeutung), Lifetime-Statistik (Tokens/Requests seit
   Prozessstart) und Details zum letzten Request (Zeitpunkt, Client —
   best-effort aus dem `User-Agent`-Header, `"unknown"` falls nicht
-  gesetzt —, Modell, Streaming, Tokens, Dauer).
+  gesetzt —, Modell, Streaming, Tokens, Dauer). Zusätzlich die
+  Kosten-relevante Aufschlüsselung von `inputTokens`:
+  `freshInputTokens` (`usage.input_tokens`), `cacheCreationTokens`
+  (`usage.cache_creation_input_tokens`) und `cacheReadTokens`
+  (`usage.cache_read_input_tokens`) getrennt — für die
+  TPM-/Tages-Budget-Rechnung werden diese drei zu `inputTokens`
+  gefaltet (5.1), da sie dort vermutlich gleich zählen; für die
+  tatsächlichen Kosten haben sie aber sehr unterschiedliche
+  $/Token-Preise (Cache-Read i.d.R. stark rabattiert, Cache-Creation
+  eher teurer als frischer Input). Der Proxy schätzt bewusst **keine**
+  $-Beträge (Langdocks tatsächliche Konditionen sind nicht bekannt),
+  liefert nur die rohen Token-Zahlen zur eigenen Einordnung.
 - `GET /`: Web-Dashboard (statisches HTML, pollt `/internal/status`
   alle 2s) — zeigt dieselben Werte visuell inkl. Fortschrittsbalken
   für TPM- und Tagesbudget, ein Zeitreihen-Diagramm (Inline-SVG, kein

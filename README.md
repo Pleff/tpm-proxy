@@ -98,7 +98,12 @@ Zeigt live (Refresh alle 2s):
 - Lifetime-Statistik (Tokens/Requests seit Prozessstart)
 - Details zum letzten Request (Zeitpunkt, Client — aus dem
   `User-Agent`-Header, falls vorhanden —, Modell, Streaming, Tokens,
-  Dauer)
+  Dauer), plus Input-Aufschlüsselung in fresh/Cache-Creation/Cache-Read
+  — diese drei haben sehr unterschiedliche $/Token-Preise (Cache-Read
+  günstig, Cache-Creation teurer als frischer Input), werden für die
+  TPM-Buchhaltung aber gleich gewichtet zusammengezählt. Reine
+  Token-Zahlen, **keine** $-Schätzung (Langdocks tatsächliche
+  Konditionen sind nicht bekannt).
 - 2-spaltiges Layout (auf schmalen Fenstern einspaltig)
 
 Das Dashboard ist eine statische Seite, die ausschließlich die unten

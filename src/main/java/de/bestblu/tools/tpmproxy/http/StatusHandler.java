@@ -67,6 +67,11 @@ public class StatusHandler implements HttpHandler {
             lastRequest.put("durationMillis", last.durationMillis());
             lastRequest.put("client", last.client());
             lastRequest.put("timestampMillis", last.timestampMillis());
+            // Cost-relevant breakdown of inputTokens above - fresh/cacheCreation/cacheRead have very
+            // different $/token prices, unlike for TPM budgeting where they're folded together.
+            lastRequest.put("freshInputTokens", last.freshInputTokens());
+            lastRequest.put("cacheCreationTokens", last.cacheCreationTokens());
+            lastRequest.put("cacheReadTokens", last.cacheReadTokens());
             body.put("lastRequest", lastRequest);
         }
 

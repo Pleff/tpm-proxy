@@ -102,6 +102,7 @@
       <div class="stat"><span>Modell</span><span id="lastModel">-</span></div>
       <div class="stat"><span>Streaming</span><span id="lastStreaming">-</span></div>
       <div class="stat"><span>Tokens (in/out)</span><span id="lastTokens">-</span></div>
+      <div class="stat"><span>Input-Aufschlüsselung (fresh/cacheCreate/cacheRead)</span><span id="lastCacheBreakdown">-</span></div>
       <div class="stat"><span>Dauer</span><span id="lastDuration">-</span></div>
     </div>
   </div>
@@ -199,6 +200,9 @@ async function refresh() {
     document.getElementById('lastStreaming').textContent = last ? (last.streaming ? 'ja' : 'nein') : '-';
     document.getElementById('lastTokens').textContent = last
       ? `${last.totalTokens} (in=${last.inputTokens} out=${last.outputTokens})`
+      : '-';
+    document.getElementById('lastCacheBreakdown').textContent = last
+      ? `${last.freshInputTokens} / ${last.cacheCreationTokens} / ${last.cacheReadTokens}`
       : '-';
     document.getElementById('lastDuration').textContent = last ? `${last.durationMillis} ms` : '-';
 
