@@ -390,11 +390,12 @@ Dies ist ein bekannter Bug, kein beabsichtigtes Verhalten.
   im Browser aus den
   gepollten Werten aufgebaut (kein Backend-Verlauf, geht beim
   Neuladen der Seite verloren).
-- Ein Log pro Request auf stdout: Modell, Streaming-Flag, Tokens
-  (in/out), Verarbeitungsdauer, aktueller TPM-Fensterstand und
-  Tagesverbrauch, Lifetime-Summe. Lokal abgelehnte Requests (TPM oder
-  TPD erschöpft) und Upstream-Fehler bekommen eigene, klar markierte
-  Logzeilen.
+- Ein Log pro Request auf stdout: Client (best-effort aus dem
+  `User-Agent`-Header, `"unknown"` falls nicht gesetzt), Modell,
+  Streaming-Flag, Tokens (in/out), Verarbeitungsdauer, aktueller
+  TPM-Fensterstand und Tagesverbrauch, Lifetime-Summe. Lokal
+  abgelehnte Requests (TPM oder TPD erschöpft) und Upstream-Fehler
+  bekommen eigene, klar markierte Logzeilen (ohne Client-Feld).
 
 ## 8. Sicherheit
 

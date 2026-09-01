@@ -24,6 +24,11 @@ import java.util.List;
  * actually catch that before Langdock does, at the cost of needing a
  * TPM_LIMIT that reflects the real workspace limit rather than a small
  * default (SPEC.md Section 5.1).
+ *
+ * <p>On top of the chars/4 heuristic, a flat overhead of 4 tokens per message
+ * in the {@code messages} array is added (see {@link #estimateInputTokens}) to
+ * account for Anthropic's per-message role/structure tokens, which the plain
+ * character count of the message content alone would miss.
  */
 public final class TokenEstimator {
 
