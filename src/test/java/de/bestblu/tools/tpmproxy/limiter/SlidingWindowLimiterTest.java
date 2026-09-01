@@ -95,6 +95,35 @@ class SlidingWindowLimiterTest {
         assertTrue(wait > 0 && wait <= 60_000, "expected a wait roughly bounded by the 60s window, got " + wait);
     }
 
+    @Test
+    void pendingTokensTracksRequestsWaitingForBudget() throws InterruptedException {
+        SlidingWindowLimiter limiter = new SlidingWindowLimiter(100, new MutableClock());
+        limiter.tryReserve(100).orElseThrow(); // exhaust the budget so the next reserve has to wait
+
+        assertEquals(0, limiter.snapshot().pendingTokens());
+
+        Thread waiter = new Thread(() -> {
+            try {
+                limiter.reserveBlocking(50, 5_000);
+            } catch (InterruptedException ignored) {
+                // expected once the test interrupts it below
+            }
+        });
+        waiter.start();
+        try {
+            long deadline = System.currentTimeMillis() + 2_000;
+            while (limiter.snapshot().pendingTokens() == 0 && System.currentTimeMillis() < deadline) {
+                Thread.sleep(10);
+            }
+            assertEquals(50, limiter.snapshot().pendingTokens(), "waiting request should count as pending");
+        } finally {
+            waiter.interrupt();
+            waiter.join(2_000);
+        }
+
+        assertEquals(0, limiter.snapshot().pendingTokens(), "pending count must clear once the waiter stops");
+    }
+
     /** A {@link Clock} the test can advance manually to exercise window expiry. */
     private static final class MutableClock extends Clock {
         private Instant instant = Instant.parse("2026-01-01T00:00:00Z");

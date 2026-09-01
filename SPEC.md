@@ -169,7 +169,10 @@ CLI) nicht dasselbe Budget doppelt verplanen.
 
 - Passt die Reservierung nicht ins aktuelle Budget, wartet der
   Request bis zu `QUEUE_TIMEOUT_MS` lang (Polling/Wakeup, sobald
-  ältere Fenstereinträge ablaufen).
+  ältere Fenstereinträge ablaufen). Während dieser Wartezeit zählen
+  die angefragten Tokens zu `pendingTokens` (Abschnitt 7) — der
+  "Warteschlange", die sich Stück für Stück abbaut, sobald das
+  60s-Fenster wieder Platz macht.
 - Wird innerhalb des Timeouts kein Budget frei, antwortet der Proxy
   mit `429` im Anthropic-kompatiblen Fehlerformat:
   ```json
@@ -281,13 +284,20 @@ auf Request-Ebene übernimmt ohnehin der TPM-Limiter.
 - `GET /internal/status`: Version, aktueller TPM-Fensterverbrauch
   (60s) und Tagesverbrauch (seit letzter lokaler Mitternacht), aktive
   Limits, verbleibendes Budget je Zähler, Anzahl aktiver
-  TPM-Reservierungen, Lifetime-Statistik (Tokens/Requests seit
-  Prozessstart) und Details zum letzten Request (Modell, Streaming,
-  Tokens, Dauer).
+  TPM-Reservierungen, `pendingTokens` (Summe der Tokens aller
+  Requests, die aktuell auf freies TPM-Budget warten — siehe unten),
+  Lifetime-Statistik (Tokens/Requests seit Prozessstart) und Details
+  zum letzten Request (Modell, Streaming, Tokens, Dauer).
 - `GET /`: Web-Dashboard (statisches HTML, pollt `/internal/status`
   alle 2s) — zeigt dieselben Werte visuell inkl. Fortschrittsbalken
-  für TPM- und Tagesbudget, und bietet ein Formular, um `tpmLimit`
-  und/oder `dailyLimit` per `PUT /internal/limit` zu ändern.
+  für TPM- und Tagesbudget, ein Zeitreihen-Diagramm (Inline-SVG, kein
+  externes Chart-Framework) mit zwei Kurven — verarbeitete Tokens
+  (`windowUsage`, bleibt unter `tpmLimit`) und wartende Tokens
+  (`pendingTokens`) — über die letzten ~80s, sowie ein Formular, um
+  `tpmLimit` und/oder `dailyLimit` per `PUT /internal/limit` zu
+  ändern. Die Zeitreihe wird ausschließlich im Browser aus den
+  gepollten Werten aufgebaut (kein Backend-Verlauf, geht beim
+  Neuladen der Seite verloren).
 - Ein Log pro Request auf stdout: Modell, Streaming-Flag, Tokens
   (in/out), Verarbeitungsdauer, aktueller TPM-Fensterstand und
   Tagesverbrauch, Lifetime-Summe. Lokal abgelehnte Requests (TPM oder

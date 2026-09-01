@@ -16,6 +16,9 @@
   .bar-fill { background: #2a7; height: 100%; width: 0; transition: width .3s; }
   .bar-fill.warn { background: #d90; }
   .bar-fill.danger { background: #d33; }
+  .chart { width: 100%; height: 160px; display: block; margin-top: .5rem; }
+  .legend { display: flex; gap: 1.2rem; font-size: .8rem; opacity: .85; margin-top: .4rem; }
+  .legend .swatch { display: inline-block; width: .7em; height: .7em; border-radius: 2px; margin-right: .35em; vertical-align: -1px; }
   form { display: flex; flex-direction: column; gap: .6rem; }
   .field-row { display: flex; justify-content: space-between; align-items: center; gap: .5rem; }
   .field-row label { opacity: .7; }
@@ -36,7 +39,21 @@
     <div class="stat"><span>Auslastung</span><span id="windowUsage">-</span></div>
     <div class="stat"><span>Verbleibend</span><span id="remaining">-</span></div>
     <div class="stat"><span>Aktive Reservierungen</span><span id="activeReservations">-</span></div>
+    <div class="stat"><span>Wartende Tokens (Queue)</span><span id="pendingTokens">-</span></div>
     <div class="bar-track"><div class="bar-fill" id="tpmBar"></div></div>
+  </div>
+
+  <div class="card">
+    <h2>TPM-Auslastung über Zeit</h2>
+    <svg id="chart" class="chart" viewBox="0 0 600 160" preserveAspectRatio="none">
+      <line id="limitLine" x1="0" x2="600" y1="0" y2="0" stroke="currentColor" stroke-opacity="0.3" stroke-dasharray="4 4" />
+      <polyline id="outgoingLine" fill="none" stroke="#2a7" stroke-width="2" points="" />
+      <polyline id="waitingLine" fill="none" stroke="#d33" stroke-width="2" points="" />
+    </svg>
+    <div class="legend">
+      <span><span class="swatch" style="background:#2a7"></span>Verarbeitet (window, &lt; Limit)</span>
+      <span><span class="swatch" style="background:#d33"></span>Wartend (Queue)</span>
+    </div>
   </div>
 
   <div class="card">
@@ -84,6 +101,33 @@ function barClass(pct) {
   return 'bar-fill' + (pct > 90 ? ' danger' : pct > 70 ? ' warn' : '');
 }
 
+const CHART_MAX_SAMPLES = 40; // ~80s of history at the 2s poll interval, a bit more than one 60s TPM window
+const outgoingHistory = [];
+const waitingHistory = [];
+
+function updateChart(windowUsage, pendingTokens, tpmLimit) {
+  outgoingHistory.push(windowUsage);
+  waitingHistory.push(pendingTokens);
+  if (outgoingHistory.length > CHART_MAX_SAMPLES) outgoingHistory.shift();
+  if (waitingHistory.length > CHART_MAX_SAMPLES) waitingHistory.shift();
+
+  const width = 600, height = 160;
+  const maxY = Math.max(tpmLimit, ...outgoingHistory, ...waitingHistory, 1) * 1.05;
+
+  const toPoints = (values) => values.map((v, i) => {
+    const x = values.length > 1 ? (i / (CHART_MAX_SAMPLES - 1)) * width : width;
+    const y = height - (v / maxY) * height;
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  }).join(' ');
+
+  document.getElementById('outgoingLine').setAttribute('points', toPoints(outgoingHistory));
+  document.getElementById('waitingLine').setAttribute('points', toPoints(waitingHistory));
+
+  const limitY = (height - (tpmLimit / maxY) * height).toFixed(1);
+  document.getElementById('limitLine').setAttribute('y1', limitY);
+  document.getElementById('limitLine').setAttribute('y2', limitY);
+}
+
 async function refresh() {
   try {
     const res = await fetch('/internal/status');
@@ -95,6 +139,8 @@ async function refresh() {
     document.getElementById('windowUsage').textContent = s.windowUsage;
     document.getElementById('remaining').textContent = s.remaining;
     document.getElementById('activeReservations').textContent = s.activeReservations;
+    document.getElementById('pendingTokens').textContent = s.pendingTokens;
+    updateChart(s.windowUsage, s.pendingTokens, s.tpmLimit);
 
     document.getElementById('dailyLimit').textContent = s.dailyLimit;
     document.getElementById('dailyUsage').textContent = s.dailyUsage;
