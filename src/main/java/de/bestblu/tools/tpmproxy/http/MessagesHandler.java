@@ -215,7 +215,12 @@ public class MessagesHandler implements HttpHandler {
                 correctBudget(budget, actual);
             } else {
                 // Stream ended without ever reporting usage (e.g. aborted mid-flight) - keep the
-                // reservation as-is rather than releasing it (SPEC.md Section 5.1: no negative rebooking).
+                // TPM reservation as-is rather than releasing it (SPEC.md Section 5.1: no negative
+                // rebooking). KNOWN BUG (SPEC.md Section 5.5): correctBudget() applies this same
+                // still-provisional amount to the daily limiter too, which commits it as if it
+                // were real usage instead of releasing it to 0 - unlike the TPM window, the daily
+                // counter is documented to only ever count actual usage, so this path currently
+                // over-counts the day's total for aborted streams that never reported usage.
                 correctBudget(budget, budget.tpm().tokens());
             }
             logCompleted(exchange, model, true, usage[0], usage[1], startNanos);

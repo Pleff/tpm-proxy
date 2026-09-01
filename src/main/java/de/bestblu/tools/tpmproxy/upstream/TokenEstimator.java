@@ -11,21 +11,26 @@ import java.util.List;
  * (confirmed via live test - 404 Not found), so this is a plain chars/4
  * heuristic, not a fallback for a primary call.
  *
- * <p>Anthropic prompt caching (a {@code cache_control} block) covers the
- * entire prefix up to and including the marked block - content there is
- * cheap to reuse once cached. Since a preflight estimate can't know whether
- * a given cache entry is warm, content at or before the last
- * {@code cache_control} breakpoint is excluded rather than counted at full
- * (uncached-worst-case) price. Content <em>after</em> the last breakpoint -
- * e.g. conversation history added since the cache was last extended - is
- * still genuinely fresh and counted normally.
+ * <p><b>Cached content is counted at full price, not excluded.</b> An
+ * earlier version excluded content at or before a {@code cache_control}
+ * breakpoint, since it's billed cheaply once cached
+ * ({@code usage.input_tokens} stayed near zero on repeat requests).
+ * Live evidence overturned that: Langdock returned real upstream 429s
+ * ("&gt;250000 TPM") while local accounting - which only tallied
+ * {@code input_tokens} - showed the budget nowhere near exhausted.
+ * Caching appears to reduce cost, not the compute Langdock's real TPM
+ * enforcement counts - the reused context still gets reprocessed every
+ * request. Counting it here means the proxy's own admission control can
+ * actually catch that before Langdock does, at the cost of needing a
+ * TPM_LIMIT that reflects the real workspace limit rather than a small
+ * default (SPEC.md Section 5.1).
  */
 public final class TokenEstimator {
 
     public int estimateInputTokens(JsonNode requestBody) {
         Analysis analysis = analyze(requestBody);
         int messageOverhead = analysis.messageCount() * 4;
-        return Math.max(1, analysis.includedChars() / 4 + messageOverhead);
+        return Math.max(1, analysis.totalChars() / 4 + messageOverhead);
     }
 
     /**

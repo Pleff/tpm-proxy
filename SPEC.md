@@ -91,7 +91,7 @@ Code CLI ─┘        ├─ 1. Auth/Validierung (lokaler Client-Token, optiona
 |---|---|---|
 | `LANGDOCK_API_KEY` | ja | Langdock API-Key. Wird beim Forward als `Authorization: Bearer <key>` gesetzt (Langdock nutzt Bearer-Auth, **kein** `x-api-key` wie die native Anthropic API). |
 | `LANGDOCK_BASE_URL` | nein (Default `https://api.langdock.com/anthropic/eu`) | Ziel-Endpunkt. `/anthropic/eu` oder `/anthropic/us` je nach Workspace-Region; bei Dedicated-Deployment stattdessen `https://<deployment-domain>/anthropic`. |
-| `TPM_LIMIT` | nein (Default `40000`) | Start-Wert für das durchgesetzte TPM-Budget (Input + Output) pro rollierendem 60s-Fenster. Zur Laufzeit änderbar (5.4). Sollte spürbar unter Langdocks geteiltem 60.000-TPM-Workspace-Limit liegen, um Headroom für andere Nutzer/Tools zu lassen. |
+| `TPM_LIMIT` | nein (Default `40000`) | Start-Wert für das durchgesetzte TPM-Budget (Input + Output, inkl. gecachtem Content — siehe 5.1) pro rollierendem 60s-Fenster. Zur Laufzeit änderbar (5.4). Sollte spürbar unter dem **tatsächlichen** Workspace-Limit liegen (Langdocks Standard-Default ist 60.000, das reale Limit pro Workspace kann aber abweichen — live beobachtet: 250.000; im Zweifel beim eigenen Workspace nachsehen statt den Default zu übernehmen), um Headroom für andere Nutzer/Tools zu lassen. |
 | `MAX_TOKENS_PER_DAY` | nein (Default `1000000`) | Start-Wert für das durchgesetzte Tages-Budget (Input + Output) pro Kalendertag (Reset um lokale Mitternacht, **kein** rollierendes Fenster). Zur Laufzeit änderbar (5.4/5.5). |
 | `PROXY_PORT` | nein (Default `8080`) | Port, auf dem der Proxy lauscht. |
 | `PROXY_CLIENT_TOKEN` | nein | Falls gesetzt: Clients (opencode, Claude Code CLI) müssen diesen Token mitsenden, um den Proxy zu nutzen. |
@@ -141,16 +141,24 @@ geschätzt:
   **nachweislich nicht** (getestet: `404 Not found`) — der
   ursprünglich geplante Preflight-Call gegen Langdock entfällt daher
   komplett, es gibt nur die Heuristik.
-  **Prompt-Caching-Ausnahme:** Content-Blöcke mit `cache_control`
-  sowie alles davor (Anthropics Prefix-Caching-Semantik: ein
-  `cache_control`-Marker cached den gesamten Präfix bis zu diesem
-  Block) werden **nicht** mitgezählt. Live beobachtet: ein gecachter
-  System-Prompt wurde mit ~18.200 geschätzten Tokens veranschlagt,
-  tatsächlich verbraucht wurden `input_tokens=2` — Faktor ~9000x
-  Überschätzung, die bei jedem Request erneut eine Reservierung
-  erzeugte, die für sich allein schon über `TPM_LIMIT` lag (Sonderfall
-  aus 5.2). Ohne diese Ausnahme wäre ein gecachter System-Prompt bei
-  jedem einzelnen Request effektiv unbenutzbar.
+  **Gecachter Content zählt voll mit — keine Ausnahme.** Eine frühere
+  Version schloss Content-Blöcke mit `cache_control` (und alles davor,
+  gemäß Anthropics Prefix-Caching-Semantik) von der Schätzung aus, da
+  sie bei Wiederverwendung nur `input_tokens=2` statt der vollen Größe
+  abrechnen. Live widerlegt: Langdock lieferte einen echten `429`
+  ("&gt;250000 TPM") zurück, während die lokale Buchhaltung — die nur
+  `input_tokens` zählte — das Budget als bei weitem nicht ausgeschöpft
+  auswies. Vermutung: Caching senkt die Kosten, nicht den von Langdocks
+  realem TPM-Limit gezählten Aufwand — der wiederverwendete Kontext
+  wird bei jedem Request neu verarbeitet. Die Schätzung zählt gecachten
+  Content deshalb wieder voll mit, damit die lokale Zulassungsprüfung
+  diesen Fall selbst abfangen kann, statt sich allein auf Langdocks
+  eigenes Limit als Backstop zu verlassen — das setzt aber voraus, dass
+  `TPM_LIMIT` realistisch auf das tatsächliche Workspace-Limit
+  eingestellt ist (nicht den kleinen Default). `TokenEstimator` bietet
+  weiterhin `hasCacheControl()`/`diagnostics()` als reine
+  Diagnose-Hilfsmittel (Abschnitt 7), die die Schätzung selbst nicht
+  beeinflussen.
 - **Output-Tokens:** nicht vorab bekannt; v1 nutzt `max_tokens` aus
   dem Request-Body als konservative Obergrenze für die
   Preflight-Reservierung.
@@ -307,18 +315,49 @@ bevor ihre echten Verbrauchswerte eintreffen. Für ein grobes
 Tages-Backstop (Default 1.000.000 Tokens) ist das akzeptabel — Präzision
 auf Request-Ebene übernimmt ohnehin der TPM-Limiter.
 
+**Bekannte Abweichung von obiger Soll-Semantik (Implementierungsstand
+`MessagesHandler.forwardStreaming`):** Bricht ein `"stream": true`-
+Request ab, bevor jemals ein `usage`-Feld per SSE empfangen wurde
+(`input_tokens`/`output_tokens` beide `0`), behandelt der Proxy diesen
+Fall aktuell **identisch** für TPM- und Tagesbudget: Er bucht die
+volle Preflight-Reservierung (geschätzte Input-Tokens + `max_tokens`)
+als "tatsächlichen" Verbrauch nach. Für das TPM-Fenster ist das
+gewollt (siehe 5.1 — "kein negatives Nachbuchen"). Für das Tagesbudget
+widerspricht das aber der oben beschriebenen Regel "nur tatsächlicher
+Verbrauch wird gezählt": Statt `0` (kein bestätigter Verbrauch, siehe
+`DailyTokenLimiter.release`) landet die geschätzte Reservierung im
+Tageszähler — für genau die abgebrochenen Requests wirkt der
+Tageszähler damit doch wie ein "Reservieren-dann-wieder-Runterkorrigieren"-
+Muster, das 5.5 eingangs explizit für den Tageszähler ausschließt.
+Dies ist ein bekannter Bug, kein beabsichtigtes Verhalten.
+
 ## 6. Request/Response-Handling
 
 - **Pfad:** Proxy exponiert `POST /v1/messages` (Kernpfad, den
-  Claude Code / opencode ansprechen) sowie transparent alle weiteren
-  Pfade, die Langdocks Anthropic-kompatibler Endpunkt anbietet
-  (Pass-through ohne Budget-Check für Nicht-`/v1/messages`-Pfade,
-  z.B. `/v1/models`).
+  Claude Code / opencode ansprechen). **Implementierungsstand:** Ein
+  transparenter Pass-through für weitere Anthropic-kompatible Pfade
+  (z.B. `/v1/models`) ist **nicht** verdrahtet — der eingebettete
+  `HttpServer` kennt nur die Kontexte `/v1/messages`,
+  `/internal/status`, `/internal/limit` und `/` (Dashboard). Jeder
+  andere Pfad landet wegen Longest-Prefix-Matching im `/`-Kontext und
+  bekommt bei `GET` die Dashboard-Seite, bei anderen Methoden `405` —
+  er erreicht Langdock nie. Der ursprünglich geplante Passthrough
+  bleibt eine spätere Erweiterung (siehe Abschnitt 9), ist aber v1
+  nicht umgesetzt.
 - **Header:** Alle Client-Header außer `x-api-key`/`Authorization`
   werden durchgereicht (z.B. `anthropic-version`, `anthropic-beta`).
   Die Auth gegenüber Langdock wird vom Proxy selbst gesetzt (siehe
   Konfiguration) — Client-seitige Auth-Header werden verworfen/
   ignoriert, außer für die optionale lokale `PROXY_CLIENT_TOKEN`-Prüfung.
+  Zusätzlich zu den beiden Auth-Headern filtert der Proxy auch die
+  hop-by-hop-/Transport-Header `Host`, `Content-Length`,
+  `Content-Type`, `Connection`, `Transfer-Encoding`, `Upgrade` und
+  `Expect` aus dem Client-Request heraus (`Content-Type` wird vom
+  Proxy selbst gesetzt — siehe Commit `6f826c4`, der einen doppelten
+  `Content-Type`-Header behoben hat, den Langdocks Parser nicht
+  vertrug). Analog werden aus der Langdock-Response `Content-Length`,
+  `Transfer-Encoding` und `Connection` nicht 1:1 durchgereicht, da der
+  Proxy die Antwort ggf. neu framt (chunked bei Streaming).
 - **Body:** unverändert durchgereicht. `"stream": true` wird
   unterstützt (siehe 5.1) — vorausgesetzt, Langdock reicht SSE
   durch (Verifikation ausstehend, Abschnitt 10). Ist das nicht der

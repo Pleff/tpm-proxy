@@ -8,9 +8,10 @@ import java.io.InputStream;
 import java.io.OutputStream;
 
 /**
- * GET / - HTML dashboard for live status and changing the TPM limit
- * (SPEC.md Section 7). Static page, loaded once at startup; all data comes
- * from client-side fetch() calls to /internal/status and /internal/limit.
+ * GET / - HTML dashboard for live status and changing the TPM and/or daily
+ * token limit (SPEC.md Section 7). Static page, loaded once at startup; all
+ * data comes from client-side fetch() calls to /internal/status and
+ * /internal/limit.
  */
 public class DashboardHandler implements HttpHandler {
 

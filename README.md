@@ -34,7 +34,7 @@ Alles über Umgebungsvariablen:
 | Variable | Pflicht | Default | Beschreibung |
 |---|---|---|---|
 | `LANGDOCK_API_KEY` | ja | – | Langdock-API-Key. Wird als `Authorization: Bearer <key>` an Langdock geschickt. |
-| `TPM_LIMIT` | nein | `40000` | Start-TPM-Budget (Input+Output-Tokens pro rollierendem 60s-Fenster). Zur Laufzeit änderbar (siehe unten). |
+| `TPM_LIMIT` | nein | `40000` | Start-TPM-Budget (Input+Output-Tokens, inkl. gecachtem Content, pro rollierendem 60s-Fenster). Zur Laufzeit änderbar (siehe unten). **Auf das tatsächliche Workspace-Limit einstellen** — Langdocks Default ist 60.000, das reale Limit kann aber höher sein (z.B. 250.000); im eigenen Workspace nachsehen statt den Proxy-Default zu übernehmen. |
 | `MAX_TOKENS_PER_DAY` | nein | `1000000` | Start-Tages-Budget (Input+Output-Tokens pro Kalendertag, Reset um lokale Mitternacht — **kein** rollierendes 24h-Fenster). Zur Laufzeit änderbar (siehe unten). |
 | `LANGDOCK_BASE_URL` | nein | `https://api.langdock.com/anthropic/eu` | Ziel-Endpunkt. `/anthropic/eu` oder `/anthropic/us` je nach Workspace-Region; bei Dedicated-Deployment `https://<deployment-domain>/anthropic`. |
 | `PROXY_PORT` | nein | `8080` | **Port, auf dem der Proxy lokal lauscht.** Frei wählbar, z.B. wenn `8080` bereits belegt ist. |
@@ -119,8 +119,11 @@ zusätzliche Server-Logik.
 Pro Request erscheint eine Zeile auf stdout, z.B.:
 
 ```
-2026-09-01 10:15:03.842 tpm-proxy: model=claude-sonnet-5 stream=false tokens=35 (in=10 out=25) duration=842ms | window=35/40000 tpm | day=35/1000000 | lifetime=35 tokens / 1 requests
+2026-09-01 10:15:03.842 tpm-proxy: client=opencode/0.1 model=claude-sonnet-5 stream=false tokens=35 (in=10 out=25) duration=842ms | window=35/40000 tpm | day=35/1000000 | lifetime=35 tokens / 1 requests
 ```
+
+`client` stammt best-effort aus dem `User-Agent`-Header des Requests
+(`"unknown"`, falls keiner gesetzt ist).
 
 Jede Logzeile (inklusive Start-Zeile, Fehlern und Limit-Änderungen)
 trägt denselben `yyyy-MM-dd HH:mm:ss.SSS`-Zeitstempel-Präfix (lokale
@@ -185,6 +188,19 @@ gesetzt ist — dann muss der Wert damit übereinstimmen.
 - **Keine Persistenz** über Neustarts hinweg (Zähler und laufzeit-
   geänderte Limits sind in-memory; nach Neustart gelten wieder die
   ENV-Var-Defaults).
+- **Kein generisches Pass-through:** Nur `POST /v1/messages` wird an
+  Langdock weitergeleitet. Andere Anthropic-kompatible Pfade (z.B.
+  `/v1/models`) sind **nicht** verdrahtet — solche Requests treffen
+  auf den `/`-Dashboard-Handler (liefern die HTML-Seite bei `GET`
+  bzw. `405` sonst) statt bei Langdock anzukommen.
+- **Bekannter Bug — Tagesbudget bei abgebrochenem Streaming:** Bricht
+  ein `"stream": true`-Request ab, bevor jemals ein `usage`-Feld per
+  SSE empfangen wurde, bucht der Proxy aktuell die volle Preflight-
+  Reservierung (geschätzte Input-Tokens + `max_tokens`) statt `0` in
+  den Tageszähler ein — ein Verstoß gegen die in SPEC.md §5.5
+  beschriebene "nur tatsächlicher Verbrauch zählt"-Regel. Für das
+  TPM-Fenster ist das Verhalten dagegen korrekt (siehe SPEC.md §5.5
+  für Details).
 
 Details und Architektur-Hintergrund: [SPEC.md](SPEC.md).
 

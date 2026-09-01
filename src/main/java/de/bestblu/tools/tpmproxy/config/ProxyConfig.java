@@ -6,8 +6,11 @@ import java.util.Optional;
 /**
  * Startup configuration, read from environment variables (SPEC.md, Section 4).
  * {@code initialTpmLimit}/{@code initialDailyTokenLimit} are only the starting
- * values - the enforced runtime values live in the sliding-window limiters and
- * can be changed via PUT /internal/limit (or the dashboard) without a restart.
+ * values - the enforced runtime values live in the two limiters
+ * ({@code SlidingWindowLimiter} for TPM, {@code DailyTokenLimiter} for the
+ * calendar-day budget - the latter is not a sliding window, see its own
+ * Javadoc) and can be changed via PUT /internal/limit (or the dashboard)
+ * without a restart.
  */
 public record ProxyConfig(
         String langdockApiKey,

@@ -90,9 +90,11 @@ class TokenEstimatorTest {
     }
 
     @Test
-    void excludesACachedSystemPromptFromTheEstimate() throws Exception {
-        // The whole (huge, in practice) system block carries cache_control - excluded entirely.
-        // Only the fresh user message ("1234", 4 chars -> 1) plus 1 * 4 overhead = 5 counts.
+    void stillCountsACachedSystemPromptAtFullPrice() throws Exception {
+        // cache_control lowers billing (usage.input_tokens), not what Langdock's real TPM
+        // enforcement counts (SPEC.md Section 5.1) - so the estimate must NOT exclude it.
+        // system "a very large cached system prompt goes here" (43 chars) + message "1234"
+        // (4 chars) = 47 chars -> 47/4 = 11, plus 1 message * 4 overhead = 15
         JsonNode body = mapper.readTree("""
                 { "system": [
                     { "type": "text", "text": "a very large cached system prompt goes here", "cache_control": { "type": "ephemeral" } }
@@ -100,14 +102,13 @@ class TokenEstimatorTest {
                   "messages": [ { "role": "user", "content": "1234" } ] }
                 """);
 
-        assertEquals(5, estimator.estimateInputTokens(body));
+        assertEquals(15, estimator.estimateInputTokens(body));
     }
 
     @Test
-    void countsFreshMessagesAfterTheLastCacheControlBreakpointNormally() throws Exception {
-        // First message is behind the cache_control breakpoint (excluded); the second,
-        // newer message comes after it and must still be counted at full price.
-        // "5678" (4 chars -> 1) + 2 messages * 4 overhead = 9
+    void cacheControlAnywhereInTheConversationDoesNotAffectTheEstimate() throws Exception {
+        // "1234" + "5678" = 8 chars -> 2, plus 2 messages * 4 overhead = 10 - identical to
+        // the same content without any cache_control marker.
         JsonNode body = mapper.readTree("""
                 { "messages": [
                     { "role": "user", "content": [
@@ -117,20 +118,7 @@ class TokenEstimatorTest {
                   ] }
                 """);
 
-        assertEquals(9, estimator.estimateInputTokens(body));
-    }
-
-    @Test
-    void fallsBackToCountingEverythingWhenNothingIsCached() throws Exception {
-        // No cache_control anywhere - behaves exactly like the plain heuristic.
-        // "12345678" (8 chars -> 2) + 1 message * 4 overhead = 6
-        JsonNode body = mapper.readTree("""
-                { "messages": [ { "role": "user", "content": [
-                    { "type": "text", "text": "12345678" }
-                  ] } ] }
-                """);
-
-        assertEquals(6, estimator.estimateInputTokens(body));
+        assertEquals(10, estimator.estimateInputTokens(body));
     }
 
     @Test
