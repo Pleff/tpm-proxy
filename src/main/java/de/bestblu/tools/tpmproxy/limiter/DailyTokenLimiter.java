@@ -53,12 +53,19 @@ public final class DailyTokenLimiter {
      * Admits the request if today's committed usage plus this worst-case
      * estimate still fits the budget. Nothing is added to the running total
      * here - only {@link #correct} commits real usage.
+     *
+     * <p>A single request larger than the whole daily limit on its own is
+     * still admitted once today's committed usage is zero - same reasoning
+     * as {@link SlidingWindowLimiter#tryReserve}: a single API call can't be
+     * split, so rejecting it forever isn't an option.
      */
     public Optional<Reservation> tryReserve(int worstCaseTokens) {
         lock.lock();
         try {
             rolloverIfNewDay();
-            if (currentUsage + worstCaseTokens > limit) {
+            boolean fitsNormally = currentUsage + worstCaseTokens <= limit;
+            boolean oversizedButNothingCommittedYet = worstCaseTokens > limit && currentUsage == 0;
+            if (!fitsNormally && !oversizedButNothingCommittedYet) {
                 return Optional.empty();
             }
             return Optional.of(new Reservation(currentDay));

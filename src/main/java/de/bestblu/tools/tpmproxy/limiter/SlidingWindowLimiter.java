@@ -43,12 +43,25 @@ public final class SlidingWindowLimiter {
         this.limit = newLimit;
     }
 
-    /** Reserves {@code tokens} immediately if the budget allows it. */
+    /**
+     * Reserves {@code tokens} immediately if the budget allows it.
+     *
+     * <p>A single request larger than the whole limit (e.g. a big conversation
+     * history pushing input_tokens + max_tokens past TPM_LIMIT) can never
+     * satisfy {@code currentSum + tokens <= limit} - not now, not ever, no
+     * matter how long it waits. Since a single API call can't be split across
+     * windows, such a request is admitted as soon as the window is completely
+     * empty (nothing else in flight), even though it overshoots the limit by
+     * itself. It then blocks everything else until it ages out 60s later -
+     * the limit is enforced around it, not by rejecting it forever.
+     */
     public Optional<Reservation> tryReserve(int tokens) {
         lock.lock();
         try {
             evictExpired();
-            if (currentSum + tokens > limit) {
+            boolean fitsNormally = currentSum + tokens <= limit;
+            boolean oversizedButWindowIsClear = tokens > limit && currentSum == 0;
+            if (!fitsNormally && !oversizedButWindowIsClear) {
                 return Optional.empty();
             }
             Reservation reservation = new Reservation(clock.millis(), tokens);

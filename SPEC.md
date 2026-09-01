@@ -165,6 +165,22 @@ CLI) nicht dasselbe Budget doppelt verplanen.
   verbleibenden Werte summiert.
 - `verfügbares Budget = aktuelles TPM_LIMIT − Summe(aktuelles Fenster)`.
 
+**Sonderfall: einzelner Request größer als das Limit.** Ein Request,
+dessen eigene Reservierung (`input_tokens + max_tokens`) allein schon
+über `TPM_LIMIT` liegt, könnte die Bedingung
+`Summe(Fenster) + tokens ≤ TPM_LIMIT` **niemals** erfüllen — beliebig
+langes Warten würde daran nichts ändern, da man einen einzelnen
+API-Call nicht über mehrere Fenster aufteilen kann. Solche Requests
+werden daher zugelassen, **sobald das Fenster komplett leer ist**
+(nichts anderes gerade in Flight), auch wenn sie das Limit dabei
+alleine überschreiten. Ist das Fenster nicht leer, muss der Request
+trotzdem warten, bis es das ist — er darf sich nicht vordrängeln.
+Danach blockiert er (da `Summe(Fenster)` jetzt über dem Limit liegt)
+alles Nachfolgende für bis zu 60s, bis er selbst wieder aus dem
+Fenster fällt. Das Limit wird so **um den Request herum** durchgesetzt
+statt ihn für immer abzulehnen. Dieselbe Logik gilt analog für das
+Tagesbudget (5.5).
+
 ### 5.3 Verhalten bei erschöpftem Budget
 
 - Passt die Reservierung nicht ins aktuelle Budget, wartet der

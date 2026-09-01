@@ -23,6 +23,25 @@ class DailyTokenLimiterTest {
     }
 
     @Test
+    void admitsAnOversizedSingleRequestWhenNothingIsCommittedYetToday() {
+        DailyTokenLimiter limiter = new DailyTokenLimiter(1000, new MutableClock());
+
+        assertTrue(limiter.tryReserve(5000).isPresent(),
+                "an oversized request must be admitted when today's committed usage is still zero");
+    }
+
+    @Test
+    void oversizedRequestIsRejectedOnceSomethingIsAlreadyCommittedToday() {
+        DailyTokenLimiter limiter = new DailyTokenLimiter(1000, new MutableClock());
+
+        Reservation reservation = limiter.tryReserve(200).orElseThrow();
+        limiter.correct(reservation, 200); // something already committed today
+
+        assertFalse(limiter.tryReserve(5000).isPresent(),
+                "an oversized request must not jump the queue once other usage is already committed");
+    }
+
+    @Test
     void usageOnlyEverIncreasesAndNeverDropsBackDownAfterCorrection() {
         DailyTokenLimiter limiter = new DailyTokenLimiter(1000, new MutableClock());
 

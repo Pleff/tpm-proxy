@@ -25,6 +25,28 @@ class SlidingWindowLimiterTest {
     }
 
     @Test
+    void admitsAnOversizedSingleRequestOnceTheWindowIsCompletelyEmpty() {
+        SlidingWindowLimiter limiter = new SlidingWindowLimiter(1000, new MutableClock());
+
+        // A single request bigger than the whole limit could never satisfy
+        // currentSum + tokens <= limit, no matter how long it waits - it must
+        // still be admitted (into an empty window) since a single API call
+        // can't be split across windows.
+        assertTrue(limiter.tryReserve(5000).isPresent(), "an oversized request must be admitted when nothing else is in flight");
+        assertEquals(5000, limiter.snapshot().windowUsage());
+    }
+
+    @Test
+    void oversizedRequestWaitsForTheWindowToClearRatherThanJumpingTheQueue() {
+        SlidingWindowLimiter limiter = new SlidingWindowLimiter(1000, new MutableClock());
+
+        limiter.tryReserve(200).orElseThrow(); // something else is already in flight
+
+        assertFalse(limiter.tryReserve(5000).isPresent(),
+                "an oversized request must not be admitted on top of existing usage, even though it can never fit normally");
+    }
+
+    @Test
     void correctFreesUpBudgetWhenActualUsageIsLower() {
         SlidingWindowLimiter limiter = new SlidingWindowLimiter(1000, new MutableClock());
 
@@ -67,8 +89,9 @@ class SlidingWindowLimiterTest {
     @Test
     void limitIsAdjustableAtRuntime() {
         SlidingWindowLimiter limiter = new SlidingWindowLimiter(100, new MutableClock());
+        limiter.tryReserve(50).orElseThrow(); // something already in flight, leaving only 50 of the 100 limit free
 
-        assertFalse(limiter.tryReserve(200).isPresent());
+        assertFalse(limiter.tryReserve(200).isPresent(), "200 does not fit in the remaining 50 of the 100 limit");
 
         limiter.setLimit(500);
 
