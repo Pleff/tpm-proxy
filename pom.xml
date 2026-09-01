@@ -12,6 +12,14 @@
   <name>tpm-proxy</name>
   <description>Lokaler TPM-Rate-Limiting-Proxy zwischen Coding-CLI-Tools und Langdock</description>
 
+  <licenses>
+    <license>
+      <name>MIT License</name>
+      <url>https://opensource.org/licenses/MIT</url>
+      <distribution>repo</distribution>
+    </license>
+  </licenses>
+
   <properties>
     <maven.compiler.release>21</maven.compiler.release>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>

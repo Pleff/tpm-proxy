@@ -182,3 +182,7 @@ gesetzt ist — dann muss der Wert damit übereinstimmen.
   ENV-Var-Defaults).
 
 Details und Architektur-Hintergrund: [SPEC.md](SPEC.md).
+
+## Lizenz
+
+[MIT](LICENSE)
