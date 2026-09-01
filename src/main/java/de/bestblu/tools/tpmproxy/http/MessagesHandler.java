@@ -98,7 +98,7 @@ public class MessagesHandler implements HttpHandler {
             if (reserved.isEmpty()) {
                 long retryAfterMillis = tpmLimiter.millisUntilAvailable(reservationTokens);
                 sendRateLimitError(exchange, "TPM", retryAfterMillis);
-                logRejected(model, streaming, "TPM", retryAfterMillis, startNanos);
+                logRejected(model, streaming, "TPM", retryAfterMillis, estimatedInputTokens, maxTokens, startNanos);
                 return;
             }
             tpmReservation = reserved.get();
@@ -115,7 +115,7 @@ public class MessagesHandler implements HttpHandler {
             tpmLimiter.release(tpmReservation);
             long retryAfterMillis = dailyLimiter.millisUntilAvailable(reservationTokens);
             sendRateLimitError(exchange, "daily token", retryAfterMillis);
-            logRejected(model, streaming, "daily token", retryAfterMillis, startNanos);
+            logRejected(model, streaming, "daily token", retryAfterMillis, estimatedInputTokens, maxTokens, startNanos);
             return;
         }
         Budget budget = new Budget(tpmReservation, dailyReserved.get());
@@ -287,9 +287,19 @@ public class MessagesHandler implements HttpHandler {
                 model, streaming, upstreamStatus, millisSince(startNanos));
     }
 
-    private void logRejected(String model, boolean streaming, String scope, long retryAfterMillis, long startNanos) {
-        System.out.printf("tpm-proxy: model=%s stream=%b REJECTED (%s budget exhausted) retryAfter=%dms duration=%dms%n",
-                model, streaming, scope, retryAfterMillis, millisSince(startNanos));
+    /**
+     * Logs a locally rejected request, including the reservation breakdown
+     * (estimated input + max_tokens) - without this, "why was my small
+     * request rejected" is impossible to diagnose, since the actual driver
+     * is often a large system prompt/history (input) or a high max_tokens
+     * default from the client, not the token count the user has in mind.
+     */
+    private void logRejected(String model, boolean streaming, String scope, long retryAfterMillis,
+                              int estimatedInputTokens, int maxTokens, long startNanos) {
+        System.out.printf(
+                "tpm-proxy: model=%s stream=%b REJECTED (%s budget exhausted) reservation=%d (est.input=%d + max_tokens=%d) retryAfter=%dms duration=%dms%n",
+                model, streaming, scope, estimatedInputTokens + maxTokens, estimatedInputTokens, maxTokens,
+                retryAfterMillis, millisSince(startNanos));
     }
 
     /**
