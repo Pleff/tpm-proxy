@@ -87,9 +87,10 @@ Zeigt live (Refresh alle 2s):
   fertig ist)
 - ein Zeitreihen-Diagramm der letzten ~80s: verarbeitete Tokens
   (bleiben unter dem TPM-Limit) vs. Anzahl aktiver Reservierungen
-  (eigene Skala, da Tokens und Anzahl nicht vergleichbar sind) —
-  reines Inline-SVG, keine externe Chart-Bibliothek, Verlauf
-  existiert nur im Browser-Tab
+  (eigene Skala, da Tokens und Anzahl nicht vergleichbar sind), plus
+  eine "-60s"-Markierung — links davon ist bereits aus dem
+  TPM-Fenster gealtert — reines Inline-SVG, keine externe
+  Chart-Bibliothek, Verlauf existiert nur im Browser-Tab
 - aktuelles Tages-Limit, Auslastung seit lokaler Mitternacht
   (Kalendertag-Zähler, kein 24h-Fenster), verbleibendes Tagesbudget
 - ein Formular, um TPM-Limit und/oder Tages-Limit **ohne Neustart**

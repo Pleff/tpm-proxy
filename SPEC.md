@@ -384,8 +384,14 @@ Dies ist ein bekannter Bug, kein beabsichtigtes Verhalten.
   externes Chart-Framework) mit zwei Kurven — verarbeitete Tokens
   (`windowUsage`, bleibt unter `tpmLimit`) und Anzahl aktiver
   TPM-Reservierungen (`activeReservations`, eigene Skala, da Tokens
-  und Anzahl nicht vergleichbar sind) — über die letzten ~80s, sowie
-  ein Formular, um `tpmLimit` und/oder `dailyLimit` per
+  und Anzahl nicht vergleichbar sind) — über die letzten ~80s, plus
+  eine gestrichelte vertikale Markierung bei "-60s": alles links davon
+  ist bereits aus dem TPM-Sliding-Window gealtert, alles rechts davon
+  zählt noch mit. Die Markierungsposition ist ein fester Prozentsatz
+  der Chart-Breite (60s-Fenster relativ zur ~80s-Gesamtspanne der
+  Anzeige) und muss bei jedem Refresh nicht neu berechnet werden, da
+  "jetzt" und "vor 60s" gleich schnell durchs Chart wandern. Dazu ein
+  Formular, um `tpmLimit` und/oder `dailyLimit` per
   `PUT /internal/limit` zu ändern. Die Zeitreihe wird ausschließlich
   im Browser aus den
   gepollten Werten aufgebaut (kein Backend-Verlauf, geht beim
