@@ -398,21 +398,31 @@ Dies ist ein bekannter Bug, kein beabsichtigtes Verhalten.
 - `GET /`: Web-Dashboard (statisches HTML, pollt `/internal/status`
   alle 2s) — zeigt dieselben Werte visuell inkl. Fortschrittsbalken
   für TPM- und Tagesbudget, ein Zeitreihen-Diagramm (Inline-SVG, kein
-  externes Chart-Framework) mit zwei Kurven — verarbeitete Tokens
-  (`windowUsage`, bleibt unter `tpmLimit`) und Anzahl aktiver
-  TPM-Reservierungen (`activeReservations`, eigene Skala, da Tokens
-  und Anzahl nicht vergleichbar sind) — über die letzten ~80s, plus
-  eine gestrichelte vertikale Markierung bei "-60s": alles links davon
-  ist bereits aus dem TPM-Sliding-Window gealtert, alles rechts davon
+  externes Chart-Framework) mit vier Kurven über die letzten 5 Minuten:
+  verarbeitete Tokens (`windowUsage`, bleibt unter `tpmLimit`), Anzahl
+  aktiver TPM-Reservierungen (`activeReservations`, gestrichelt
+  dargestellt), sowie Cache-Create und Cache-Read — letztere zwei sind
+  keine eigenen Zeitreihen-Felder im Endpunkt, sondern werden im
+  Browser durch Differenzbildung zwischen aufeinanderfolgenden Polls
+  der kumulierten `dailyCacheCreationTokens`/`dailyCacheReadTokens`
+  gebildet (ein Rückgang zwischen zwei Polls bedeutet den
+  Tageswechsel-Reset und wird als 0 statt als negativer Ausschlag
+  behandelt). Jede Kurve hat eine eigene Skala, da Tokens,
+  Reservierungs-Anzahl und Cache-Zuwachs pro Poll nicht vergleichbar
+  sind; per Klick auf die Legende ist jede Kurve einzeln
+  ein-/ausblendbar, wobei eine ausgeblendete Kurve auch aus der
+  Skalenberechnung der verbleibenden herausfällt (verhindert, dass ein
+  einzelner Ausreißer die anderen Kurven flach drückt). Dazu eine
+  gestrichelte vertikale Markierung bei "-60s": alles links davon ist
+  bereits aus dem TPM-Sliding-Window gealtert, alles rechts davon
   zählt noch mit. Die Markierungsposition ist ein fester Prozentsatz
-  der Chart-Breite (60s-Fenster relativ zur ~80s-Gesamtspanne der
+  der Chart-Breite (60s-Fenster relativ zur 5-Minuten-Gesamtspanne der
   Anzeige) und muss bei jedem Refresh nicht neu berechnet werden, da
   "jetzt" und "vor 60s" gleich schnell durchs Chart wandern. Dazu ein
   Formular, um `tpmLimit` und/oder `dailyLimit` per
-  `PUT /internal/limit` zu ändern. Die Zeitreihe wird ausschließlich
-  im Browser aus den
-  gepollten Werten aufgebaut (kein Backend-Verlauf, geht beim
-  Neuladen der Seite verloren).
+  `PUT /internal/limit` zu ändern. Die Zeitreihen werden ausschließlich
+  im Browser aus den gepollten Werten aufgebaut (kein Backend-Verlauf,
+  geht beim Neuladen der Seite verloren).
 - Ein Log pro Request auf stdout: Client (best-effort aus dem
   `User-Agent`-Header, `"unknown"` falls nicht gesetzt), Modell,
   Streaming-Flag, Tokens (in/out), Verarbeitungsdauer, aktueller

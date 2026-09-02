@@ -85,12 +85,16 @@ Zeigt live (Refresh alle 2s):
   Fenster — nicht gleichbedeutend mit "gerade laufenden Requests",
   ein Eintrag bleibt bis zu 60s stehen, auch wenn der Request längst
   fertig ist)
-- ein Zeitreihen-Diagramm der letzten ~80s: verarbeitete Tokens
-  (bleiben unter dem TPM-Limit) vs. Anzahl aktiver Reservierungen
-  (eigene Skala, da Tokens und Anzahl nicht vergleichbar sind), plus
-  eine "-60s"-Markierung — links davon ist bereits aus dem
-  TPM-Fenster gealtert — reines Inline-SVG, keine externe
-  Chart-Bibliothek, Verlauf existiert nur im Browser-Tab
+- ein Zeitreihen-Diagramm der letzten 5 Minuten mit vier Linien —
+  verarbeitete Tokens, Anzahl aktiver Reservierungen (gestrichelt),
+  sowie Cache-Create und Cache-Read (jeweils der Zuwachs seit dem
+  letzten Poll, aus den kumulierten Tagesbudget-Zahlen abgeleitet) —
+  jede Linie mit eigener Skala (per Klick auf die Legende einzeln
+  ein-/ausblendbar; eine ausgeblendete Linie fällt dabei auch aus der
+  Skalierung der verbleibenden heraus), plus eine "-60s"-Markierung —
+  links davon ist bereits aus dem TPM-Fenster gealtert — reines
+  Inline-SVG, keine externe Chart-Bibliothek, Verlauf existiert nur im
+  Browser-Tab
 - aktuelles Tages-Limit, Auslastung seit lokaler Mitternacht
   (Kalendertag-Zähler, kein 24h-Fenster), verbleibendes Tagesbudget,
   sowie kumulierte Tokens (in/out) und dieselbe
