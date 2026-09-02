@@ -24,8 +24,8 @@ public record ProxyConfig(
     private static final String DEFAULT_LANGDOCK_BASE_URL = "https://api.langdock.com/anthropic/eu";
     private static final int DEFAULT_PROXY_PORT = 8080;
     private static final long DEFAULT_QUEUE_TIMEOUT_MS = 30_000L;
-    private static final int DEFAULT_TPM_LIMIT = 40_000;
-    private static final int DEFAULT_MAX_TOKENS_PER_DAY = 1_000_000;
+    private static final int DEFAULT_TPM_LIMIT = 200_000;
+    private static final int DEFAULT_MAX_TOKENS_PER_DAY = 10_000_000;
 
     public static ProxyConfig fromEnv() {
         return fromEnv(System.getenv());

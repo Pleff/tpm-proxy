@@ -34,8 +34,8 @@ class ProxyConfigTest {
 
         assertEquals("secret-key", config.langdockApiKey());
         assertEquals("https://api.langdock.com/anthropic/eu", config.langdockBaseUrl());
-        assertEquals(40_000, config.initialTpmLimit());
-        assertEquals(1_000_000, config.initialDailyTokenLimit());
+        assertEquals(200_000, config.initialTpmLimit());
+        assertEquals(10_000_000, config.initialDailyTokenLimit());
         assertEquals(8080, config.proxyPort());
         assertNull(config.proxyClientToken());
         assertEquals(30_000L, config.queueTimeoutMs());

@@ -91,8 +91,8 @@ Code CLI ─┘        ├─ 1. Auth/Validierung (lokaler Client-Token, optiona
 |---|---|---|
 | `LANGDOCK_API_KEY` | ja | Langdock API-Key. Wird beim Forward als `Authorization: Bearer <key>` gesetzt (Langdock nutzt Bearer-Auth, **kein** `x-api-key` wie die native Anthropic API). |
 | `LANGDOCK_BASE_URL` | nein (Default `https://api.langdock.com/anthropic/eu`) | Ziel-Endpunkt. `/anthropic/eu` oder `/anthropic/us` je nach Workspace-Region; bei Dedicated-Deployment stattdessen `https://<deployment-domain>/anthropic`. |
-| `TPM_LIMIT` | nein (Default `40000`) | Start-Wert für das durchgesetzte TPM-Budget (Input + Output, inkl. gecachtem Content — siehe 5.1) pro rollierendem 60s-Fenster. Zur Laufzeit änderbar (5.4). Sollte spürbar unter dem **tatsächlichen** Workspace-Limit liegen (Langdocks Standard-Default ist 60.000, das reale Limit pro Workspace kann aber abweichen — live beobachtet: 250.000; im Zweifel beim eigenen Workspace nachsehen statt den Default zu übernehmen), um Headroom für andere Nutzer/Tools zu lassen. |
-| `MAX_TOKENS_PER_DAY` | nein (Default `1000000`) | Start-Wert für das durchgesetzte Tages-Budget (Input + Output) pro Kalendertag (Reset um lokale Mitternacht, **kein** rollierendes Fenster). Zur Laufzeit änderbar (5.4/5.5). |
+| `TPM_LIMIT` | nein (Default `200000`) | Start-Wert für das durchgesetzte TPM-Budget (Input + Output, inkl. gecachtem Content — siehe 5.1) pro rollierendem 60s-Fenster. Zur Laufzeit änderbar (5.4). Sollte spürbar unter dem **tatsächlichen** Workspace-Limit liegen (das reale Limit pro Workspace kann abweichen — live beobachtet: 250.000; im Zweifel beim eigenen Workspace nachsehen statt den Default zu übernehmen), um Headroom für andere Nutzer/Tools zu lassen. |
+| `MAX_TOKENS_PER_DAY` | nein (Default `10000000`) | Start-Wert für das durchgesetzte Tages-Budget (Input + Output) pro Kalendertag (Reset um lokale Mitternacht, **kein** rollierendes Fenster). Zur Laufzeit änderbar (5.4/5.5). |
 | `PROXY_PORT` | nein (Default `8080`) | Port, auf dem der Proxy lauscht. |
 | `PROXY_CLIENT_TOKEN` | nein | Falls gesetzt: Clients (opencode, Claude Code CLI) müssen diesen Token mitsenden, um den Proxy zu nutzen. |
 | `QUEUE_TIMEOUT_MS` | nein (Default `30000`) | Wie lange ein Request maximal auf freies TPM-Budget wartet, bevor er mit 429 abgelehnt wird. Gilt nicht für das Tages-Budget (5.5). |
@@ -107,7 +107,7 @@ Start-Zeile mit Versionsnummer, Port, Ziel-Endpunkt und den aktiven
 Start-Limits aus, z.B.:
 
 ```
-2026-09-01 10:15:00.512 tpm-proxy: v0.1.0-SNAPSHOT - listening on port 8080, forwarding to https://api.langdock.com/anthropic/eu (TPM limit: 40000, daily limit: 1000000)
+2026-09-01 10:15:00.512 tpm-proxy: v0.1.0-SNAPSHOT - listening on port 8080, forwarding to https://api.langdock.com/anthropic/eu (TPM limit: 200000, daily limit: 10000000)
 ```
 
 Die Versionsnummer stammt aus dem Maven-Projekt (`pom.xml`) und wird
@@ -312,7 +312,7 @@ Jeder Request muss **beide** Budgets passieren:
 nicht vormerkt, können mehrere parallele Requests knapp vor Erreichen
 des Tageslimits das Budget theoretisch geringfügig überschreiten,
 bevor ihre echten Verbrauchswerte eintreffen. Für ein grobes
-Tages-Backstop (Default 1.000.000 Tokens) ist das akzeptabel — Präzision
+Tages-Backstop (Default 10.000.000 Tokens) ist das akzeptabel — Präzision
 auf Request-Ebene übernimmt ohnehin der TPM-Limiter.
 
 **Bekannte Abweichung von obiger Soll-Semantik (Implementierungsstand

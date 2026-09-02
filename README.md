@@ -34,8 +34,8 @@ Alles über Umgebungsvariablen:
 | Variable | Pflicht | Default | Beschreibung |
 |---|---|---|---|
 | `LANGDOCK_API_KEY` | ja | – | Langdock-API-Key. Wird als `Authorization: Bearer <key>` an Langdock geschickt. |
-| `TPM_LIMIT` | nein | `40000` | Start-TPM-Budget (Input+Output-Tokens, inkl. gecachtem Content, pro rollierendem 60s-Fenster). Zur Laufzeit änderbar (siehe unten). **Auf das tatsächliche Workspace-Limit einstellen** — Langdocks Default ist 60.000, das reale Limit kann aber höher sein (z.B. 250.000); im eigenen Workspace nachsehen statt den Proxy-Default zu übernehmen. |
-| `MAX_TOKENS_PER_DAY` | nein | `1000000` | Start-Tages-Budget (Input+Output-Tokens pro Kalendertag, Reset um lokale Mitternacht — **kein** rollierendes 24h-Fenster). Zur Laufzeit änderbar (siehe unten). |
+| `TPM_LIMIT` | nein | `200000` | Start-TPM-Budget (Input+Output-Tokens, inkl. gecachtem Content, pro rollierendem 60s-Fenster). Zur Laufzeit änderbar (siehe unten). **Auf das tatsächliche Workspace-Limit einstellen** — im eigenen Workspace nachsehen statt den Proxy-Default zu übernehmen. |
+| `MAX_TOKENS_PER_DAY` | nein | `10000000` | Start-Tages-Budget (Input+Output-Tokens pro Kalendertag, Reset um lokale Mitternacht — **kein** rollierendes 24h-Fenster). Zur Laufzeit änderbar (siehe unten). |
 | `LANGDOCK_BASE_URL` | nein | `https://api.langdock.com/anthropic/eu` | Ziel-Endpunkt. `/anthropic/eu` oder `/anthropic/us` je nach Workspace-Region; bei Dedicated-Deployment `https://<deployment-domain>/anthropic`. |
 | `PROXY_PORT` | nein | `8080` | **Port, auf dem der Proxy lokal lauscht.** Frei wählbar, z.B. wenn `8080` bereits belegt ist. |
 | `PROXY_CLIENT_TOKEN` | nein | – | Falls gesetzt: Clients müssen diesen Token mitsenden (als `x-api-key`-Header oder `Authorization: Bearer <token>`), um den Proxy zu benutzen. Ohne diese Variable ist die lokale Auth-Prüfung aus. |
@@ -52,7 +52,7 @@ PowerShell:
 
 ```powershell
 $env:LANGDOCK_API_KEY = "dein-langdock-key"
-$env:TPM_LIMIT = "40000"
+$env:TPM_LIMIT = "200000"
 $env:PROXY_PORT = "8080"   # optional, siehe oben
 java -jar target/tpm-proxy.jar
 ```
@@ -60,7 +60,7 @@ java -jar target/tpm-proxy.jar
 Bash:
 
 ```bash
-LANGDOCK_API_KEY=dein-langdock-key TPM_LIMIT=40000 java -jar target/tpm-proxy.jar
+LANGDOCK_API_KEY=dein-langdock-key TPM_LIMIT=200000 java -jar target/tpm-proxy.jar
 ```
 
 Der Proxy bindet ausschließlich an `localhost` (nicht netzwerkweit
@@ -69,7 +69,7 @@ Versionsnummer, Port, Ziel-Endpunkt und den aktiven Start-Limits aus,
 z.B.:
 
 ```
-2026-09-01 10:15:00.512 tpm-proxy: v0.1.0-SNAPSHOT - listening on port 8080, forwarding to https://api.langdock.com/anthropic/eu (TPM limit: 40000, daily limit: 1000000)
+2026-09-01 10:15:00.512 tpm-proxy: v0.1.0-SNAPSHOT - listening on port 8080, forwarding to https://api.langdock.com/anthropic/eu (TPM limit: 200000, daily limit: 10000000)
 2026-09-01 10:15:00.513 tpm-proxy: dashboard: http://localhost:8080/
 ```
 
@@ -128,7 +128,7 @@ zusätzliche Server-Logik.
 Pro Request erscheint eine Zeile auf stdout, z.B.:
 
 ```
-2026-09-01 10:15:03.842 tpm-proxy: client=opencode/0.1 model=claude-sonnet-5 stream=false tokens=35 (in=10 out=25) duration=842ms | window=35/40000 tpm | day=35/1000000 | lifetime=35 tokens / 1 requests
+2026-09-01 10:15:03.842 tpm-proxy: client=opencode/0.1 model=claude-sonnet-5 stream=false tokens=35 (in=10 out=25) duration=842ms | window=35/200000 tpm | day=35/10000000 | lifetime=35 tokens / 1 requests
 ```
 
 `client` stammt best-effort aus dem `User-Agent`-Header des Requests
